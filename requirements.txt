@@ -1,0 +1,2 @@
+# hw-vx-config runtime dependencies
+# (none — pure Python stdlib)
