@@ -29,6 +29,19 @@ hw-vx-config dhcp 192.168.1.100 on
 hw-vx-config reboot 192.168.1.100
 ```
 
+## Documentation
+
+📖 **[Full API Reference →](docs/README.md)**
+
+| Module | Docs | Description |
+|---|---|---|
+| `constants` | [reference](docs/api/constants.md) | Protocol constants, setting codes, option tables |
+| `models` | [reference](docs/api/models.md) | `SearchResult` and `DeviceConfig` dataclasses |
+| `transport` | [reference](docs/api/transport.md) | Low-level UDP transport (`HwVxNetworking`) |
+| `device` | [reference](docs/api/device.md) | High-level device operations (`HwVxDevice`) |
+| `formatting` | [reference](docs/api/formatting.md) | Pretty-print helpers |
+| `cli` | [reference](docs/api/cli.md) | Interactive menu & scriptable sub-commands |
+
 ## Project Structure
 
 ```
@@ -42,14 +55,11 @@ hw-vx-config/
 │   ├── formatting.py      # Pretty-print helpers
 │   ├── models.py          # SearchResult & DeviceConfig dataclasses
 │   └── transport.py       # Low-level UDP socket transport
-├── tests/
-│   ├── conftest.py        # Shared fixtures
-│   ├── test_cli.py
-│   ├── test_constants.py
-│   ├── test_device.py
-│   ├── test_formatting.py
-│   ├── test_models.py
-│   └── test_transport.py
+├── tests/                 # 55 unit tests (mocked sockets)
+├── docs/                  # API reference & architecture
+│   ├── README.md
+│   └── api/
+├── main.py                # python main.py entry point
 ├── pyproject.toml         # Build config, deps, tool settings
 ├── requirements.txt
 └── requirements-dev.txt
