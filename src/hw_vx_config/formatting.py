@@ -14,6 +14,14 @@ from hw_vx_config.constants import (
 from hw_vx_config.models import DeviceConfig
 
 
+def fmt_mac(raw: str) -> str:
+    """Convert decimal-dot MAC (e.g. '0.34.112.0.167.227') to 'XX:XX:XX:XX:XX:XX'."""
+    try:
+        return ":".join(f"{int(b):02X}" for b in raw.split("."))
+    except (ValueError, AttributeError):
+        return raw
+
+
 def fmt_option(value: str, options: dict[int, str]) -> str:
     """Format an index *value* with its human-readable label."""
     try:
@@ -24,45 +32,116 @@ def fmt_option(value: str, options: dict[int, str]) -> str:
         return value
 
 
+class Box:
+    """
+    Builds a fixed-width box from a list of (label, value) rows.
+
+    Geometry is derived automatically:
+    - label_width = longest label
+    - inner_width = indent(2) + label_width + " : " (3) + value_gutter(2) + max_value
+      (clamped to at least 54 so short tables still look right)
+    """
+
+    _MIN_INNER = 54
+    _INDENT = "  "  # left margin before ║
+
+    def __init__(self) -> None:
+        # Each entry: ("row", label, value) | ("div",) | ("hdr", title)
+        self._entries: list[tuple] = []
+
+    def hdr(self, title: str) -> "Box":
+        self._entries.append(("hdr", title))
+        return self
+
+    def div(self) -> "Box":
+        self._entries.append(("div",))
+        return self
+
+    def row(self, label: str, value: str) -> "Box":
+        self._entries.append(("row", label, value))
+        return self
+
+    def item(self, text: str) -> "Box":
+        """Full-width text line (no label/value split)."""
+        self._entries.append(("item", text))
+        return self
+
+    def _geometry(self) -> tuple[int, int]:
+        """Return (label_width, inner_width)."""
+        labels = [e[1] for e in self._entries if e[0] == "row"]
+        label_w = max((len(lbl) for lbl in labels), default=0)
+        # "  " + label_w + " : " + value  — value needs at least 1 space of padding
+        min_content = 2 + label_w + 3  # indent + label + " : "
+        inner = max(self._MIN_INNER, min_content + 1)
+        return label_w, inner
+
+    def render(self) -> str:
+        label_w, inner = self._geometry()
+        ind = self._INDENT
+        border = "═" * inner
+
+        def line_row(label: str, value: str) -> str:
+            content = f"  {label:<{label_w}} : {value}"
+            return f"{ind}║{content}{' ' * (inner - len(content))}║"
+
+        def line_hdr(title: str) -> str:
+            inner_text = f"  {title}  "
+            return f"{ind}║{inner_text}{' ' * (inner - len(inner_text))}║"
+
+        def line_item(text: str) -> str:
+            content = f"  {text}"
+            return f"{ind}║{content}{' ' * (inner - len(content))}║"
+
+        out = [f"{ind}╔{border}╗"]
+        for entry in self._entries:
+            if entry[0] == "hdr":
+                out.append(line_hdr(entry[1]))
+            elif entry[0] == "div":
+                out.append(f"{ind}╠{border}╣")
+            elif entry[0] == "item":
+                out.append(line_item(entry[1]))
+            else:  # row
+                out.append(line_row(entry[1], entry[2]))
+        out.append(f"{ind}╚{border}╝")
+        return "\n".join(out)
+
+
 def format_config(cfg: DeviceConfig) -> str:
     """Return a pretty box-drawing representation of *cfg*."""
-    lines: list[str] = [
-        "",
-        "  ╔══════════════════════════════════════════════════════╗",
-        "  ║              NETWORK SETTINGS                       ║",
-        "  ╠══════════════════════════════════════════════════════╣",
-        f"  ║  IP Address      : {cfg.ip_address:<33}║",
-        f"  ║  Subnet Mask     : {cfg.subnet_mask:<33}║",
-        f"  ║  Gateway IP      : {cfg.gateway_ip:<33}║",
-        f"  ║  MAC Address     : {cfg.mac_address:<33}║",
-        f"  ║  Port            : {cfg.port_number:<33}║",
-        f"  ║  Protocol        : {fmt_option(cfg.protocol, PROTOCOL_OPTIONS):<33}║",
-        f"  ║  Work Mode       : {fmt_option(cfg.work_mode, WORK_MODE_OPTIONS):<33}║",
-        f"  ║  DHCP            : {fmt_option(cfg.dhcp, DHCP_OPTIONS):<33}║",
-        f"  ║  Remote IP       : {cfg.remote_ip:<33}║",
-        f"  ║  Remote Port     : {cfg.remote_port:<33}║",
-        f"  ║  Username        : {cfg.username:<33}║",
-        f"  ║  Device Name     : {cfg.device_name:<33}║",
-        "  ╠══════════════════════════════════════════════════════╣",
-        "  ║              SERIAL SETTINGS                        ║",
-        "  ╠══════════════════════════════════════════════════════╣",
-        f"  ║  Baud Rate       : {fmt_option(cfg.baud_rate, BAUD_RATE_OPTIONS):<33}║",
-        f"  ║  Parity          : {fmt_option(cfg.parity, PARITY_OPTIONS):<33}║",
-        f"  ║  Data Bits       : {fmt_option(cfg.data_bits, DATA_BITS_OPTIONS):<33}║",
-        f"  ║  DTR Mode        : {fmt_option(cfg.dtr_mode, TOGGLE_OPTIONS):<33}║",
-        f"  ║  RTS             : {fmt_option(cfg.rts, TOGGLE_OPTIONS):<33}║",
-        "  ╠══════════════════════════════════════════════════════╣",
-        "  ║              ADVANCED SETTINGS                      ║",
-        "  ╠══════════════════════════════════════════════════════╣",
-        f"  ║  Connection Mode : {cfg.connection_mode:<33}║",
-        f"  ║  Conn. Timeout   : {cfg.connection_timeout:<33}║",
-        f"  ║  Reconnect       : {cfg.reconnect:<33}║",
-        f"  ║  Max Length       : {cfg.max_length:<33}║",
-        f"  ║  Max Delay        : {cfg.max_delay:<33}║",
-        "  ╚══════════════════════════════════════════════════════╝",
-        "",
-    ]
-    return "\n".join(lines)
+    box = (
+        Box()
+        .hdr("NETWORK SETTINGS")
+        .div()
+        .row("IP Address", cfg.ip_address)
+        .row("Subnet Mask", cfg.subnet_mask)
+        .row("Gateway IP", cfg.gateway_ip)
+        .row("MAC Address", fmt_mac(cfg.mac_address))
+        .row("Port", cfg.port_number)
+        .row("Protocol", fmt_option(cfg.protocol, PROTOCOL_OPTIONS))
+        .row("Work Mode", fmt_option(cfg.work_mode, WORK_MODE_OPTIONS))
+        .row("DHCP", fmt_option(cfg.dhcp, DHCP_OPTIONS))
+        .row("Remote IP", cfg.remote_ip)
+        .row("Remote Port", cfg.remote_port)
+        .row("Username", cfg.username)
+        .row("Device Name", cfg.device_name)
+        .div()
+        .hdr("SERIAL SETTINGS")
+        .div()
+        .row("Baud Rate", fmt_option(cfg.baud_rate, BAUD_RATE_OPTIONS))
+        .row("Parity", fmt_option(cfg.parity, PARITY_OPTIONS))
+        .row("Data Bits", fmt_option(cfg.data_bits, DATA_BITS_OPTIONS))
+        .row("DTR Mode", fmt_option(cfg.dtr_mode, TOGGLE_OPTIONS))
+        .row("RTS", fmt_option(cfg.rts, TOGGLE_OPTIONS))
+        .div()
+        .hdr("ADVANCED SETTINGS")
+        .div()
+        .row("Connection Mode", cfg.connection_mode)
+        .row("Conn. Timeout", cfg.connection_timeout)
+        .row("Reconnect", cfg.reconnect)
+        .row("Max Length", cfg.max_length)
+        .row("Max Delay", cfg.max_delay)
+    )
+    return "\n" + box.render() + "\n"
 
 
 def print_config(cfg: DeviceConfig) -> None:
