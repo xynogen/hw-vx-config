@@ -7,7 +7,7 @@ name = "hw-vx-config"
 version = "1.0.0"
 description = "Network configuration tool for HW-VX6330K / HW-VX6346KL serial-to-Ethernet modules"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.10"
 authors = [{ name = "xynogen" }]
 keywords = [
@@ -21,7 +21,6 @@ classifiers = [
   "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Intended Audience :: System Administrators",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",

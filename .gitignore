@@ -31,5 +31,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Legacy monolith (kept for reference)
-hw_vx_config_legacy.py
+# Pix Agent
+.pi/
+.pi-lens/
