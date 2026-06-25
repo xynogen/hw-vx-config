@@ -8,6 +8,7 @@ then get / set configuration.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 from hw_vx_config.models import DeviceConfig, SearchResult
 from hw_vx_config.transport import HwVxNetworking
@@ -92,7 +93,7 @@ class HwVxDevice:
 
     @staticmethod
     def _send_config_pass(
-        send,
+        send: Callable[[str], None],
         cfg: DeviceConfig,
         delay: float,
         *,
@@ -134,8 +135,8 @@ class HwVxDevice:
 
     # ── quick operations ─────────────────────────────────────────────
 
-    def change_ip(self, new_ip: str) -> None:
-        """Change IP address and reboot (C# ``changeIpButton_Click``)."""
+    def change_network(self, new_ip: str, subnet_mask: str, gateway_ip: str) -> None:
+        """Change IP, subnet mask, and gateway, then reboot."""
         s = self.net.send
 
         # Unicast
@@ -144,10 +145,14 @@ class HwVxDevice:
         s("L")
         time.sleep(0.05)
         self.net.receive()  # drain reply
-        s(f"SIP{new_ip}|34")
+        s(f"SGI{gateway_ip}|35")
+        time.sleep(0.1)
+        s(f"SNM{subnet_mask}|36")
+        time.sleep(0.1)
+        s(f"SIP{new_ip}|37")
         time.sleep(0.1)
         self.net.receive()
-        s("E|35")
+        s("E")
         time.sleep(0.2)
 
         # Broadcast fallback
@@ -156,10 +161,14 @@ class HwVxDevice:
             time.sleep(0.1)
             broadcast.send("L")
             time.sleep(0.05)
-            broadcast.send(f"SIP{new_ip}|34")
+            broadcast.send(f"SGI{gateway_ip}|35")
+            time.sleep(0.1)
+            broadcast.send(f"SNM{subnet_mask}|36")
+            time.sleep(0.1)
+            broadcast.send(f"SIP{new_ip}|37")
             time.sleep(0.1)
             broadcast.receive()
-            broadcast.send("E|35")
+            broadcast.send("E")
 
     def set_dhcp(self, enabled: bool) -> None:
         """Enable / disable DHCP and reboot."""
@@ -183,5 +192,5 @@ class HwVxDevice:
     def __enter__(self) -> HwVxDevice:
         return self
 
-    def __exit__(self, *exc) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.close()

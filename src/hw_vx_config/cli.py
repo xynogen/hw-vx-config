@@ -16,7 +16,7 @@ from hw_vx_config.constants import (
     WORK_MODE_OPTIONS,
 )
 from hw_vx_config.device import HwVxDevice
-from hw_vx_config.formatting import Box, fmt_option, print_config
+from hw_vx_config.formatting import Box, fmt_mac, fmt_option, print_config
 from hw_vx_config.models import DeviceConfig, SearchResult
 from hw_vx_config.transport import HwVxNetworking
 
@@ -56,7 +56,9 @@ def search_readers() -> list[SearchResult]:
     ui.info(f"{'#':<4} {'IP Address':<18} {'MAC Address':<20} {'Port':<8} {'Name'}")
     ui.info(f"{'─' * 4} {'─' * 18} {'─' * 20} {'─' * 8} {'─' * 20}")
     for i, r in enumerate(results, 1):
-        ui.info(f"{i:<4} {r.ip_address:<18} {r.mac_address:<20} {r.port_number:<8} {r.device_name}")
+        ui.info(
+            f"{i:<4} {r.ip_address:<18} {fmt_mac(r.mac_address):<20} {r.port_number:<8} {r.device_name}"
+        )
     print()
     return results
 
@@ -155,20 +157,37 @@ def interactive_menu() -> None:
             if not selected_ip:
                 ui.warn("No reader selected. Search first (option 1).")
                 continue
-            new_ip = input(f"  Enter new IP address (current: {selected_ip}): ").strip()
-            if not new_ip:
-                continue
-            confirm = input(f"  Change IP to {new_ip} and reboot? (y/n): ").strip().lower()
-            if confirm == "y":
-                try:
+            try:
+                # Read current values so user can press Enter to keep them
+                with HwVxDevice(selected_ip) as dev:
+                    dev.connect()
+                    cfg = dev.get_config()
+                    current_config = cfg
+                    selected_mac = cfg.mac_address or selected_mac
+
+                ui.info("Edit network addressing (Enter = keep current value):\n")
+                new_ip = _ask("IP Address", cfg.ip_address)
+                new_mask = _ask("Subnet Mask", cfg.subnet_mask)
+                new_gw = _ask("Gateway IP", cfg.gateway_ip)
+
+                print()
+                ui.kv("IP Address", new_ip)
+                ui.kv("Subnet Mask", new_mask)
+                ui.kv("Gateway IP", new_gw)
+                print()
+
+                confirm = input("  Apply and reboot? (y/n): ").strip().lower()
+                if confirm == "y":
                     with HwVxDevice(selected_ip) as dev:
                         dev.connect()
-                        dev.change_ip(new_ip)
-                    ui.ok(f"IP changed to {new_ip}. Reader is rebooting...")
+                        dev.change_network(new_ip, new_mask, new_gw)
+                    ui.ok("Network settings applied. Reader is rebooting...")
                     ui.hint("Wait ~5 seconds, then search again.")
                     selected_ip = new_ip
-                except Exception as e:
-                    ui.err(f"Error: {e}")
+                else:
+                    ui.info("Cancelled.")
+            except Exception as e:
+                ui.err(f"Error: {e}")
 
         # ── 5. DHCP ──
         elif choice == "5":
@@ -321,9 +340,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg = sub.add_parser("config", help="Show reader configuration")
     p_cfg.add_argument("ip", help="Reader IP address")
 
-    p_ip = sub.add_parser("set-ip", help="Change reader IP address")
+    p_ip = sub.add_parser("set-ip", help="Change reader IP address (and optionally mask/gateway)")
     p_ip.add_argument("ip", help="Current reader IP")
     p_ip.add_argument("new_ip", help="New IP address")
+    p_ip.add_argument("--mask", default=None, help="New subnet mask (reads from device if omitted)")
+    p_ip.add_argument(
+        "--gateway", default=None, help="New gateway IP (reads from device if omitted)"
+    )
 
     p_dhcp = sub.add_parser("dhcp", help="Enable or disable DHCP")
     p_dhcp.add_argument("ip", help="Reader IP address")
@@ -364,8 +387,13 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "set-ip":
         with HwVxDevice(args.ip) as dev:
             dev.connect()
-            dev.change_ip(args.new_ip)
-        print(f"IP changed to {args.new_ip}. Reader rebooting...")
+            new_cfg: DeviceConfig | None = (
+                dev.get_config() if (args.mask is None or args.gateway is None) else None
+            )
+            mask = args.mask or (new_cfg.subnet_mask if new_cfg is not None else "255.255.255.0")
+            gateway = args.gateway or (new_cfg.gateway_ip if new_cfg is not None else "0.0.0.0")
+            dev.change_network(args.new_ip, mask, gateway)
+        print(f"IP changed to {args.new_ip} (mask={mask} gw={gateway}). Reader rebooting...")
 
     elif args.command == "dhcp":
         with HwVxDevice(args.ip) as dev:

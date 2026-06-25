@@ -117,25 +117,62 @@ class TestSaveConfig:
         assert "E" in unicast_commands
 
 
-class TestChangeIp:
-    def test_sends_ip_change_and_reboot(
-        self, device: HwVxDevice, mock_transport: MagicMock
-    ) -> None:
+class TestChangeNetwork:
+    def _run(
+        self,
+        device: HwVxDevice,
+        mock_transport: MagicMock,
+        new_ip: str = "10.0.0.50",
+        mask: str = "255.255.0.0",
+        gw: str = "10.0.0.1",
+    ) -> tuple[list[str], MagicMock]:
+        """Call change_network and return (unicast_cmds, broadcast_mock)."""
         device.mac = "AA:BB:CC:DD:EE:FF"
         mock_transport.receive.return_value = ""
 
-        with patch("hw_vx_config.device.HwVxNetworking") as mock_net:
-            broadcast_mock = MagicMock()
-            mock_net.return_value = broadcast_mock
-            broadcast_mock.__enter__ = MagicMock(return_value=broadcast_mock)
-            broadcast_mock.__exit__ = MagicMock(return_value=False)
-            broadcast_mock.receive.return_value = ""
+        broadcast_mock = MagicMock()
+        broadcast_mock.__enter__ = MagicMock(return_value=broadcast_mock)
+        broadcast_mock.__exit__ = MagicMock(return_value=False)
+        broadcast_mock.receive.return_value = ""
 
-            device.change_ip("10.0.0.50")
+        with patch("hw_vx_config.device.HwVxNetworking", return_value=broadcast_mock):
+            device.change_network(new_ip, mask, gw)
 
         unicast_cmds = [c[0][0] for c in mock_transport.send.call_args_list]
-        assert "SIP10.0.0.50|34" in unicast_cmds
-        assert "E|35" in unicast_cmds
+        return unicast_cmds, broadcast_mock
+
+    def test_sends_ip_command(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
+        cmds, _ = self._run(device, mock_transport)
+        assert "SIP10.0.0.50|37" in cmds
+
+    def test_sends_subnet_mask_command(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
+        cmds, _ = self._run(device, mock_transport)
+        assert "SNM255.255.0.0|36" in cmds
+
+    def test_sends_gateway_command(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
+        cmds, _ = self._run(device, mock_transport)
+        assert "SGI10.0.0.1|35" in cmds
+
+    def test_sends_reboot(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
+        cmds, _ = self._run(device, mock_transport)
+        assert "E" in cmds
+
+    def test_gateway_sent_before_ip(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
+        """Order must be: SGI → SNM → SIP so IP change happens last."""
+        cmds, _ = self._run(device, mock_transport)
+        gw_idx = cmds.index("SGI10.0.0.1|35")
+        nm_idx = cmds.index("SNM255.255.0.0|36")
+        ip_idx = cmds.index("SIP10.0.0.50|37")
+        assert gw_idx < nm_idx < ip_idx
+
+    def test_broadcast_fallback_sends_all_three(
+        self, device: HwVxDevice, mock_transport: MagicMock
+    ) -> None:
+        _, bcast = self._run(device, mock_transport)
+        bcast_cmds = [c[0][0] for c in bcast.send.call_args_list]
+        assert "SGI10.0.0.1|35" in bcast_cmds
+        assert "SNM255.255.0.0|36" in bcast_cmds
+        assert "SIP10.0.0.50|37" in bcast_cmds
 
 
 class TestSetDhcp:

@@ -1,7 +1,25 @@
 """Tests for hw_vx_config.formatting."""
 
-from hw_vx_config.formatting import fmt_option, format_config
+from hw_vx_config.formatting import fmt_mac, fmt_option, format_config
 from hw_vx_config.models import DeviceConfig
+
+
+class TestFmtMac:
+    def test_decimal_dot_to_colon_hex(self) -> None:
+        assert fmt_mac("0.34.112.0.166.237") == "00:22:70:00:A6:ED"
+
+    def test_zero_padded(self) -> None:
+        assert fmt_mac("0.0.0.0.0.1") == "00:00:00:00:00:01"
+
+    def test_max_values(self) -> None:
+        assert fmt_mac("255.255.255.255.255.255") == "FF:FF:FF:FF:FF:FF"
+
+    def test_invalid_returns_raw(self) -> None:
+        """Non-numeric input should pass through unchanged."""
+        assert fmt_mac("AA:BB:CC:DD:EE:FF") == "AA:BB:CC:DD:EE:FF"
+
+    def test_empty_string_returns_empty(self) -> None:
+        assert fmt_mac("") == ""
 
 
 class TestFmtOption:

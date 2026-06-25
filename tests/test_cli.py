@@ -26,6 +26,16 @@ class TestBuildParser:
         args = parser.parse_args(["set-ip", "192.168.1.1", "10.0.0.1"])
         assert args.ip == "192.168.1.1"
         assert args.new_ip == "10.0.0.1"
+        assert args.mask is None
+        assert args.gateway is None
+
+    def test_set_ip_with_mask_and_gateway(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            ["set-ip", "192.168.1.1", "10.0.0.1", "--mask", "255.255.0.0", "--gateway", "10.0.0.1"]
+        )
+        assert args.mask == "255.255.0.0"
+        assert args.gateway == "10.0.0.1"
 
     def test_dhcp_state_choices(self) -> None:
         parser = build_parser()
