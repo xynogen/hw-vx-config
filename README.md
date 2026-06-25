@@ -136,6 +136,13 @@ pytest --cov=hw_vx_config --cov-report=term-missing
 
 Tests live in `tests/` and mock the UDP socket — no device needed to run them.
 
+## Tested with
+
+- Package version: **0.1.0**
+- Hardware: HW-VX6330K, HW-VX6346KL
+- Protocol: UDP port 65535, ASCII request/reply
+- OS: Linux (Ubuntu 22.04+)
+
 ## License
 
 MIT
