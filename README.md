@@ -27,13 +27,10 @@ advanced settings over the HW-VX UDP protocol (port 65535).
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install hw-vx-config
 
 # Discover all readers on the network
 hw-vx-config search
-
-# Or run directly without installing
-python main.py
 ```
 
 ## CLI Reference
