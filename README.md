@@ -93,7 +93,7 @@ The interactive menu (`hw-vx-config` with no arguments) provides a numbered prom
 
 ```
   ╔══════════════════════════════════════════════════════╗
-  ║  HW-VX6330K / HW-VX6346KL  Network Config Tool      ║
+  ║  HW-VX6330K / HW-VX6346KL  Network Config Tool       ║
   ║  Linux Edition — ported from C# Demo v2.11           ║
   ╚══════════════════════════════════════════════════════╝
 
