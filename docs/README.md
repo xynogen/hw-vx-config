@@ -18,8 +18,8 @@ Detailed reference for every module in the `hw_vx_config` package.
 
 ```
 ┌──────────────────────────────────────────────────┐
-│                    cli.py                        │  ← user-facing
-│         (argparse + interactive menu)            │
+│                    cli.py                        │  ← user-facing (argparse + interactive menu)
+│                                                  │
 ├──────────────────────────────────────────────────┤
 │                  device.py                       │  ← high-level API
 │     (connect, get_config, save_config, …)        │
@@ -43,7 +43,7 @@ All communication uses **UDP on port 65535**. Commands are ASCII strings.
 Client                          Device
   │                               │
   │──── X (broadcast) ───────────>│  Search / Echo
-  │<─── A{mac}/{port}/…  ────────│  Reply
+  │<─── A{mac}/{port}/… ─────────│  Reply
   │                               │
   │──── W{mac} ──────────────────>│  Select
   │<─── A… ──────────────────────│
@@ -51,10 +51,10 @@ Client                          Device
   │──── L ───────────────────────>│  Login
   │<─── A… ──────────────────────│
   │                               │
-  │──── G{code}|{seq} ──────────>│  Get setting
-  │<─── A{value}|{seq} ─────────│
+  │──── G{code}|{seq} ───────────>│  Get setting
+  │<─── A{value}|{seq} ──────────│
   │                               │
-  │──── S{code}{value}|{seq} ───>│  Set setting
+  │──── S{code}{value}|{seq} ────>│  Set setting
   │<─── A… ──────────────────────│
   │                               │
   │──── E ───────────────────────>│  Reboot

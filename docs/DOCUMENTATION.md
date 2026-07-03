@@ -27,10 +27,10 @@
 Communication is host-initiated: the host sends a command, the reader executes it and returns a response.
 
 ```
-HOST  ──── Command Data Block ────►  READER
-                                       │
-                                       ▼ (executes)
-HOST  ◄─── Response Data Block ───  READER
+HOST  ──── Command Data Block ─────►  READER
+                                        │
+                                        ▼ (executes)
+HOST  ◄─── Response Data Block ────  READER
 ```
 
 **Timing constraints:**
