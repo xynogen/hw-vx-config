@@ -11,6 +11,9 @@ Sends UDP packets directly to the device — no DLLs, no runtime dependencies, p
 Accepts a device IP or discovers via broadcast; reads and writes all network, serial, and
 advanced settings over the HW-VX UDP protocol (port 65535).
 
+> **Note:** This tool has only been tested on Linux. While it may work on other platforms,
+> no guarantees are made for macOS or Windows.
+
 ## Table of Contents
 
 - [Requirements](#requirements)
