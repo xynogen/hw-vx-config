@@ -92,17 +92,28 @@ hw-vx-config set-reader-addr <ip> <port> 5 --adr 1
 The interactive menu (`hw-vx-config` with no arguments) provides a numbered prompt:
 
 ```
-1. Search for readers          — broadcast discovery, select from results
-2. Connect to specific IP      — skip discovery, target a known address directly
-3. Show current configuration
-4. Change IP address
-5. Enable/Disable DHCP
-6. Change remote server        — set Remote IP, Remote Port, Work Mode
-7. Edit & save full configuration — field-by-field editor, confirm before write
-8. Reboot reader
-9. RFID reader info            — address, firmware, power (via TCP binary protocol)
-10. Set RFID reader address    — change the reader's Adr (0-254)
-q. Quit
+  ╔══════════════════════════════════════════════════════╗
+  ║  HW-VX6330K / HW-VX6346KL  Network Config Tool      ║
+  ║  Linux Edition — ported from C# Demo v2.11           ║
+  ╚══════════════════════════════════════════════════════╝
+
+  ╔══════════════════════════════════════════════════════╗
+  ║  1. Search for readers                               ║  ← broadcast discovery, select from results
+  ║  2. Connect to specific IP                           ║  ← skip discovery, target a known address
+  ╠══════════════════════════════════════════════════════╣
+  ║  3. Show current configuration                       ║
+  ║  4. Change IP address                                ║
+  ║  5. Enable/Disable DHCP                              ║
+  ║  6. Change remote server                             ║  ← Remote IP, Remote Port, Work Mode
+  ╠══════════════════════════════════════════════════════╣
+  ║  7. Edit & save full configuration                   ║  ← field-by-field editor, confirm before write
+  ║  8. Reboot reader                                    ║
+  ╠══════════════════════════════════════════════════════╣
+  ║  9. RFID reader info                                 ║  ← address, firmware, power (TCP binary)
+  ║  10. Set RFID reader address                         ║  ← change reader Adr (0–254)
+  ╠══════════════════════════════════════════════════════╣
+  ║  q. Quit   l. List menu                              ║
+  ╚══════════════════════════════════════════════════════╝
 ```
 
 Option 2 is useful when the device is on a different subnet and broadcast cannot reach it.
