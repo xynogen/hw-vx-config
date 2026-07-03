@@ -136,13 +136,11 @@ def interactive_menu() -> None:
                 if r:
                     selected_ip = r.ip_address
                     selected_mac = r.mac_address
-                    ui.ok(f"Selected: {selected_ip}")
                     try:
                         with HwVxDevice(selected_ip) as dev:
                             dev.connect()
                             current_config = dev.get_config()
                             selected_mac = current_config.mac_address or selected_mac
-                        ui.ok("Configuration loaded.")
                     except Exception as e:
                         ui.warn(f"Could not read config: {e}")
 
@@ -152,16 +150,13 @@ def interactive_menu() -> None:
             if ip:
                 selected_ip = ip
                 selected_mac = ""
-                ui.info(f"Connecting to {ip}...")
                 try:
                     with HwVxDevice(selected_ip) as dev:
                         dev.connect()
                         current_config = dev.get_config()
                         selected_mac = current_config.mac_address or selected_mac
-                    ui.ok(f"Connected to {ip} (port {current_config.port_number}).")
                 except Exception as e:
-                    ui.warn(f"Connected but could not read config: {e}")
-                    ui.hint("RFID commands will ask for the TCP port manually.")
+                    ui.warn(f"Could not read config: {e}")
 
         # ── 3. Show config ──
         elif choice == "3":
