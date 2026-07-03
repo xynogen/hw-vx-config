@@ -1,5 +1,10 @@
 # hw-vx-config
 
+[![PyPI version](https://img.shields.io/pypi/v/hw-vx-config)](https://pypi.org/project/hw-vx-config/)
+[![Python](https://img.shields.io/pypi/pyversions/hw-vx-config)](https://pypi.org/project/hw-vx-config/)
+[![License: MIT](https://img.shields.io/github/license/xynogen/hw-vx-config)](LICENSE)
+[![CI](https://github.com/xynogen/hw-vx-config/actions/workflows/ci.yml/badge.svg)](https://github.com/xynogen/hw-vx-config/actions/workflows/ci.yml)
+
 Network configuration tool for HW-VX6330K / HW-VX6346KL serial-to-Ethernet modules on Linux.
 Sends UDP packets directly to the device — no DLLs, no runtime dependencies, pure stdlib.
 
@@ -15,6 +20,8 @@ advanced settings over the HW-VX UDP protocol (port 65535).
 - [Protocol](#protocol)
 - [Examples](#examples)
 - [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Uninstall](#uninstall)
 - [License](#license)
 
 ## Requirements
@@ -26,11 +33,16 @@ advanced settings over the HW-VX UDP protocol (port 65535).
 ## Quick Start
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
 pip install hw-vx-config
 
 # Discover all readers on the network
 hw-vx-config search
+```
+
+Or install with [pipx](https://pipx.pypa.io/) for isolated CLI usage:
+
+```bash
+pipx install hw-vx-config
 ```
 
 ## CLI Reference
@@ -133,13 +145,30 @@ pytest --cov=hw_vx_config --cov-report=term-missing
 
 Tests live in `tests/` and mock the UDP socket — no device needed to run them.
 
+## Troubleshooting
+
+| Problem | Possible cause | Fix |
+|:---|:---|:---|
+| `search` returns nothing | Firewall blocks UDP 65535 | Open UDP 65535 inbound/outbound (`sudo ufw allow 65535/udp`) |
+| | Device on a different subnet | Use `hw-vx-config interactive` → option 2 (connect by IP) |
+| | Broadcast not reaching device | Ensure host and device share the same L2 network / VLAN |
+| Timeout on `config` / `set-ip` | Device IP changed or unreachable | Verify with `ping <ip>`; re-discover with `search` |
+| `Permission denied` on socket | Rare kernel policy | Run with `sudo` or check `sysctl net.ipv4.ip_unprivileged_port_start` |
+
+## Uninstall
+
+```bash
+pip uninstall hw-vx-config
+# or if installed with pipx:
+pipx uninstall hw-vx-config
+```
+
 ## Tested with
 
-- Package version: **0.1.0**
 - Hardware: HW-VX6330K, HW-VX6346KL
 - Protocol: UDP port 65535, ASCII request/reply
 - OS: Linux (Ubuntu 22.04+)
 
 ## License
 
-MIT
+MIT — see [PyPI page](https://pypi.org/project/hw-vx-config/) for the published package.
