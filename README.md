@@ -70,6 +70,22 @@ hw-vx-config interactive
 hw-vx-config              # same — interactive is the default
 ```
 
+### RFID Reader Commands
+
+These commands use the UHF RFID binary protocol (UHFReader18) over TCP.
+The `<port>` is the device's configured TCP port (from network settings).
+
+```bash
+# Get reader information (address, firmware, power, etc.)
+hw-vx-config reader-info <ip> <port>
+
+# Set reader address from 0 to 1
+hw-vx-config set-reader-addr <ip> <port> 1
+
+# Set reader address when current address is not 0
+hw-vx-config set-reader-addr <ip> <port> 5 --adr 1
+```
+
 ## Interactive Menu
 
 The interactive menu (`hw-vx-config` with no arguments) provides a numbered prompt:
@@ -80,9 +96,11 @@ The interactive menu (`hw-vx-config` with no arguments) provides a numbered prom
 3. Show current configuration
 4. Change IP address
 5. Enable/Disable DHCP
-6. Edit & save full configuration — field-by-field editor, confirm before write
-7. Change remote server        — set Remote IP, Remote Port, Work Mode
+6. Change remote server        — set Remote IP, Remote Port, Work Mode
+7. Edit & save full configuration — field-by-field editor, confirm before write
 8. Reboot reader
+9. RFID reader info            — address, firmware, power (via TCP binary protocol)
+10. Set RFID reader address    — change the reader's Adr (0-254)
 q. Quit
 ```
 
@@ -116,6 +134,7 @@ The `examples/` directory contains companion scripts.
 |:---|:---|
 | `server_uhf.py` | TCP server that receives RFID tag data from the reader on port 2077. Run this alongside the reader when `Work Mode` is set to `Client` and `Remote Port` is `2077`. |
 | `library_usage.py` | Shows how to use `HwVxDevice` and `HwVxNetworking` directly in Python code — discover, read config, change settings, and quick operations. |
+| `rfid_usage.py` | Shows how to use `RfidClient` to get reader info and change the reader address via the binary protocol. |
 
 ```bash
 python examples/server_uhf.py
