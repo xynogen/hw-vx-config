@@ -19,6 +19,7 @@ advanced settings over the HW-VX UDP protocol (port 65535).
 - [Interactive Menu](#interactive-menu)
 - [Protocol](#protocol)
 - [Examples](#examples)
+- [Documentation](#documentation)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
 - [Uninstall](#uninstall)
@@ -126,6 +127,19 @@ Discovery reply format: `A{mac}/{port}/.../{username}/{device_name}` from the de
 Setting codes of note: `IP` (IP address), `NM` (subnet mask), `GI` (gateway), `DH` (DHCP),
 `BR` (baud rate), `TP` (protocol), `RM` (work mode). Full table in `src/hw_vx_config/constants.py`.
 
+### RFID Binary Protocol (TCP port 2077)
+
+The UHF RFID reader uses a separate binary protocol over TCP port 2077 (UHFReader18 / ISO18000-6C & 6B).
+
+| Message | Size | Description |
+|:---|:---|:---|
+| Tag Report | 18 bytes | `Len · Adr · 0xEE · Status · EPC(12B) · CRC16` |
+| Keepalive | 1 byte | `0x56` — sent every ~30 s to hold the TCP connection |
+
+CRC-16/CCITT reflected (`PRESET=0xFFFF`, `POLY=0x8408`), computed from `Len` through end of `Data`, stored little-endian.
+
+Full command reference (Inventory, Read/Write, Lock, Kill, reader-defined commands) → [`docs/PROTOCOL.md`](docs/PROTOCOL.md) and [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md).
+
 ## Examples
 
 The `examples/` directory contains companion scripts.
@@ -140,6 +154,14 @@ The `examples/` directory contains companion scripts.
 python examples/server_uhf.py
 # Listening on 0.0.0.0:2077
 ```
+
+## Documentation
+
+| File | Description |
+|:---|:---|
+| [`docs/PROTOCOL.md`](docs/PROTOCOL.md) | Concise reference for the TCP port 2077 RFID binary protocol — frame layout, CRC algorithm, keepalive, and protocol stack. |
+| [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md) | Full UHFReader18 command reference — all EPC C1G2, ISO18000-6B, and reader-defined commands with request/response tables, status codes, and tag memory layout. |
+| [`docs/README.md`](docs/README.md) | Docs index. |
 
 ## Development
 
