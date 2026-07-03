@@ -120,36 +120,7 @@ Option 2 is useful when the device is on a different subnet and broadcast cannot
 
 ## Protocol
 
-UDP on port **65535**. Every packet is ASCII. Replies are prefixed with `A`.
-
-| Prefix | Direction | Action |
-|:---|:---|:---|
-| `X` | → device | Broadcast echo — triggers discovery reply |
-| `W{mac}` | → device | Select device by MAC |
-| `L` | → device | Login |
-| `O` | → device | Logout |
-| `G{code}` | → device | Get one setting |
-| `S{code}{value}\|{seq}` | → device | Set one setting |
-| `E` | → device | Save and reboot |
-| `A{payload}` | ← device | All replies |
-
-Discovery reply format: `A{mac}/{port}/.../{username}/{device_name}` from the device's source IP.
-
-Setting codes of note: `IP` (IP address), `NM` (subnet mask), `GI` (gateway), `DH` (DHCP),
-`BR` (baud rate), `TP` (protocol), `RM` (work mode). Full table in `src/hw_vx_config/constants.py`.
-
-### RFID Binary Protocol (TCP port 2077)
-
-The UHF RFID reader uses a separate binary protocol over TCP port 2077 (UHFReader18 / ISO18000-6C & 6B).
-
-| Message | Size | Description |
-|:---|:---|:---|
-| Tag Report | 18 bytes | `Len · Adr · 0xEE · Status · EPC(12B) · CRC16` |
-| Keepalive | 1 byte | `0x56` — sent every ~30 s to hold the TCP connection |
-
-CRC-16/CCITT reflected (`PRESET=0xFFFF`, `POLY=0x8408`), computed from `Len` through end of `Data`, stored little-endian.
-
-Full command reference (Inventory, Read/Write, Lock, Kill, reader-defined commands) → [`docs/api/protocol.md`](docs/api/protocol.md) and [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md).
+UDP port **65535** (device config) and TCP port **2077** (RFID tag push). Full details in [`docs/`](docs/) — see [`docs/api/protocol.md`](docs/api/protocol.md) and [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md).
 
 ## Examples
 
