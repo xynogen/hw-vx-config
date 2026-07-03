@@ -12,6 +12,7 @@ Detailed reference for every module in the `hw_vx_config` package.
 | [`device`](api/device.md) | High-level device operations (`HwVxDevice`) |
 | [`formatting`](api/formatting.md) | Pretty-print helpers for configuration output |
 | [`cli`](api/cli.md) | Command-line interface — interactive menu & sub-commands |
+| [`protocol`](api/protocol.md) | TCP port 2077 RFID binary protocol — frame layout, CRC, keepalive |
 
 ## Architecture
 

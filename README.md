@@ -149,7 +149,7 @@ The UHF RFID reader uses a separate binary protocol over TCP port 2077 (UHFReade
 
 CRC-16/CCITT reflected (`PRESET=0xFFFF`, `POLY=0x8408`), computed from `Len` through end of `Data`, stored little-endian.
 
-Full command reference (Inventory, Read/Write, Lock, Kill, reader-defined commands) → [`docs/PROTOCOL.md`](docs/PROTOCOL.md) and [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md).
+Full command reference (Inventory, Read/Write, Lock, Kill, reader-defined commands) → [`docs/api/protocol.md`](docs/api/protocol.md) and [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md).
 
 ## Examples
 
@@ -168,11 +168,10 @@ python examples/server_uhf.py
 
 ## Documentation
 
-| File | Description |
-|:---|:---|
-| [`docs/PROTOCOL.md`](docs/PROTOCOL.md) | Concise reference for the TCP port 2077 RFID binary protocol — frame layout, CRC algorithm, keepalive, and protocol stack. |
-| [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md) | Full UHFReader18 command reference — all EPC C1G2, ISO18000-6B, and reader-defined commands with request/response tables, status codes, and tag memory layout. |
-| [`docs/README.md`](docs/README.md) | Docs index. |
+Detailed references live in [`docs/`](docs/) — not required for day-to-day use.
+
+- **[`docs/api/`](docs/api/)** — per-module API reference and TCP port 2077 RFID binary protocol
+- **[`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md)** — full UHFReader18 manual (EPC C1G2 / ISO18000-6B command set, status codes, tag memory)
 
 ## Development
 
