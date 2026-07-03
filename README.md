@@ -17,11 +17,11 @@ advanced settings over the HW-VX UDP protocol (port 65535).
 - [Quick Start](#quick-start)
 - [CLI Reference](#cli-reference)
 - [Interactive Menu](#interactive-menu)
-- [Protocol](#protocol)
 - [Examples](#examples)
-- [Documentation](#documentation)
-- [Development](#development)
 - [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Protocol](#protocol)
+- [Documentation](#documentation)
 - [Uninstall](#uninstall)
 - [License](#license)
 
@@ -118,10 +118,6 @@ The interactive menu (`hw-vx-config` with no arguments) provides a numbered prom
 
 Option 2 is useful when the device is on a different subnet and broadcast cannot reach it.
 
-## Protocol
-
-UDP port **65535** (device config) and TCP port **2077** (RFID tag push). Full details in [`docs/`](docs/) — see [`docs/api/protocol.md`](docs/api/protocol.md) and [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md).
-
 ## Examples
 
 The `examples/` directory contains companion scripts.
@@ -137,12 +133,15 @@ python examples/server_uhf.py
 # Listening on 0.0.0.0:2077
 ```
 
-## Documentation
+## Troubleshooting
 
-Detailed references live in [`docs/`](docs/) — not required for day-to-day use.
-
-- **[`docs/api/`](docs/api/)** — per-module API reference and TCP port 2077 RFID binary protocol
-- **[`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md)** — full UHFReader18 manual (EPC C1G2 / ISO18000-6B command set, status codes, tag memory)
+| Problem | Possible cause | Fix |
+|:---|:---|:---|
+| `search` returns nothing | Firewall blocks UDP 65535 | Open UDP 65535 inbound/outbound (`sudo ufw allow 65535/udp`) |
+| | Device on a different subnet | Use `hw-vx-config interactive` → option 2 (connect by IP) |
+| | Broadcast not reaching device | Ensure host and device share the same L2 network / VLAN |
+| Timeout on `config` / `set-ip` | Device IP changed or unreachable | Verify with `ping <ip>`; re-discover with `search` |
+| `Permission denied` on socket | Rare kernel policy | Run with `sudo` or check `sysctl net.ipv4.ip_unprivileged_port_start` |
 
 ## Development
 
@@ -167,15 +166,14 @@ pytest --cov=hw_vx_config --cov-report=term-missing
 
 Tests live in `tests/` and mock the UDP socket — no device needed to run them.
 
-## Troubleshooting
+## Protocol
 
-| Problem | Possible cause | Fix |
-|:---|:---|:---|
-| `search` returns nothing | Firewall blocks UDP 65535 | Open UDP 65535 inbound/outbound (`sudo ufw allow 65535/udp`) |
-| | Device on a different subnet | Use `hw-vx-config interactive` → option 2 (connect by IP) |
-| | Broadcast not reaching device | Ensure host and device share the same L2 network / VLAN |
-| Timeout on `config` / `set-ip` | Device IP changed or unreachable | Verify with `ping <ip>`; re-discover with `search` |
-| `Permission denied` on socket | Rare kernel policy | Run with `sudo` or check `sysctl net.ipv4.ip_unprivileged_port_start` |
+UDP port **65535** (device config) and TCP port **2077** (RFID tag push). Full details → [`docs/api/protocol.md`](docs/api/protocol.md) and [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md).
+
+## Further Reading
+
+- **[`docs/api/`](docs/api/)** — per-module API reference and RFID binary protocol
+- **[`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md)** — full UHFReader18 manual (EPC C1G2 / ISO18000-6B command set, status codes, tag memory)
 
 ## Uninstall
 
