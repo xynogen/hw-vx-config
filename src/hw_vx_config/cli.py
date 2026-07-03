@@ -18,6 +18,7 @@ from hw_vx_config.constants import (
 from hw_vx_config.device import HwVxDevice
 from hw_vx_config.formatting import Box, fmt_mac, fmt_option, print_config
 from hw_vx_config.models import DeviceConfig, SearchResult
+from hw_vx_config.rfid import RfidClient
 from hw_vx_config.transport import HwVxNetworking
 
 # ─── Banner ──────────────────────────────────────────────────────────
@@ -85,31 +86,37 @@ def select_reader(results: list[SearchResult]) -> SearchResult | None:
 
 def interactive_menu() -> None:
     """Main interactive menu loop."""
-    print(BANNER)
 
     selected_ip: str | None = None
     selected_mac: str | None = None
     current_config: DeviceConfig | None = None
+    reader_adr: int = 0  # RFID reader address, discovered via option 9
 
     _menu = (
         Box()
         .item("1. Search for readers")
         .item("2. Connect to specific IP")
+        .div()
         .item("3. Show current configuration")
         .item("4. Change IP address")
         .item("5. Enable/Disable DHCP")
-        .item("6. Edit & save full configuration")
-        .item("7. Change remote server")
+        .item("6. Change remote server")
+        .div()
+        .item("7. Edit & save full configuration")
         .item("8. Reboot reader")
+        .div()
+        .item("9. RFID reader info")
+        .item("10. Set RFID reader address")
         .div()
         .item("q. Quit   l. List menu")
     )
 
-    while True:
-        print(_menu.render())
+    print(BANNER)
+    print(_menu.render())
 
+    while True:
         if selected_ip:
-            ui.info(f"📡 Connected: {selected_ip} ({selected_mac})")
+            ui.info(f"📡 Connected: {selected_ip} ({fmt_mac(selected_mac or '')})")
 
         choice = input("\n  Select option: ").strip()
 
@@ -118,6 +125,7 @@ def interactive_menu() -> None:
             break
 
         if choice in ("l", "L"):
+            print(_menu.render())
             continue
 
         # ── 1. Search ──
@@ -129,6 +137,14 @@ def interactive_menu() -> None:
                     selected_ip = r.ip_address
                     selected_mac = r.mac_address
                     ui.ok(f"Selected: {selected_ip}")
+                    try:
+                        with HwVxDevice(selected_ip) as dev:
+                            dev.connect()
+                            current_config = dev.get_config()
+                            selected_mac = current_config.mac_address or selected_mac
+                        ui.ok("Configuration loaded.")
+                    except Exception as e:
+                        ui.warn(f"Could not read config: {e}")
 
         # ── 2. Connect to specific IP ──
         elif choice == "2":
@@ -136,7 +152,16 @@ def interactive_menu() -> None:
             if ip:
                 selected_ip = ip
                 selected_mac = ""
-                ui.ok(f"Target set to {ip}. Use option 3 to read config.")
+                ui.info(f"Connecting to {ip}...")
+                try:
+                    with HwVxDevice(selected_ip) as dev:
+                        dev.connect()
+                        current_config = dev.get_config()
+                        selected_mac = current_config.mac_address or selected_mac
+                    ui.ok(f"Connected to {ip} (port {current_config.port_number}).")
+                except Exception as e:
+                    ui.warn(f"Connected but could not read config: {e}")
+                    ui.hint("RFID commands will ask for the TCP port manually.")
 
         # ── 3. Show config ──
         elif choice == "3":
@@ -217,8 +242,42 @@ def interactive_menu() -> None:
                     except Exception as e:
                         ui.err(f"Error: {e}")
 
-        # ── 6. Edit full config ──
+        # ── 6. Change remote server ──
         elif choice == "6":
+            if not selected_ip:
+                ui.warn("No reader selected. Search first (option 1).")
+                continue
+            try:
+                with HwVxDevice(selected_ip) as dev:
+                    dev.connect()
+                    cfg = dev.get_config()
+
+                    ui.kv("Remote IP", cfg.remote_ip)
+                    ui.kv("Remote Port", cfg.remote_port)
+                    ui.kv("Work Mode", fmt_option(cfg.work_mode, WORK_MODE_OPTIONS))
+                    print()
+
+                    new_remote_ip = input(f"  Remote IP [{cfg.remote_ip}]: ").strip()
+                    new_remote_port = input(f"  Remote Port [{cfg.remote_port}]: ").strip()
+                    new_work_mode = input(
+                        f"  Work Mode [{cfg.work_mode}] (0=Server, 1=Client): "
+                    ).strip()
+
+                    cfg.remote_ip = new_remote_ip or cfg.remote_ip
+                    cfg.remote_port = new_remote_port or cfg.remote_port
+                    cfg.work_mode = new_work_mode or cfg.work_mode
+
+                    confirm = input("  Save and reboot? (y/n): ").strip().lower()
+                    if confirm == "y":
+                        dev.save_config(cfg)
+                        ui.ok("Remote server updated. Reader is rebooting...")
+                    else:
+                        ui.info("Cancelled.")
+            except Exception as e:
+                ui.err(f"Error: {e}")
+
+        # ── 7. Edit full config ──
+        elif choice == "7":
             if not selected_ip:
                 ui.warn("No reader selected. Search first (option 1).")
                 continue
@@ -263,40 +322,6 @@ def interactive_menu() -> None:
             except Exception as e:
                 ui.err(f"Error: {e}")
 
-        # ── 7. Change remote server ──
-        elif choice == "7":
-            if not selected_ip:
-                ui.warn("No reader selected. Search first (option 1).")
-                continue
-            try:
-                with HwVxDevice(selected_ip) as dev:
-                    dev.connect()
-                    cfg = dev.get_config()
-
-                    ui.kv("Remote IP", cfg.remote_ip)
-                    ui.kv("Remote Port", cfg.remote_port)
-                    ui.kv("Work Mode", fmt_option(cfg.work_mode, WORK_MODE_OPTIONS))
-                    print()
-
-                    new_remote_ip = input(f"  Remote IP [{cfg.remote_ip}]: ").strip()
-                    new_remote_port = input(f"  Remote Port [{cfg.remote_port}]: ").strip()
-                    new_work_mode = input(
-                        f"  Work Mode [{cfg.work_mode}] (0=Server, 1=Client): "
-                    ).strip()
-
-                    cfg.remote_ip = new_remote_ip or cfg.remote_ip
-                    cfg.remote_port = new_remote_port or cfg.remote_port
-                    cfg.work_mode = new_work_mode or cfg.work_mode
-
-                    confirm = input("  Save and reboot? (y/n): ").strip().lower()
-                    if confirm == "y":
-                        dev.save_config(cfg)
-                        ui.ok("Remote server updated. Reader is rebooting...")
-                    else:
-                        ui.info("Cancelled.")
-            except Exception as e:
-                ui.err(f"Error: {e}")
-
         # ── 8. Reboot ──
         elif choice == "8":
             if not selected_ip:
@@ -312,10 +337,75 @@ def interactive_menu() -> None:
                 except Exception as e:
                     ui.err(f"Error: {e}")
 
+        # ── 9. RFID reader info ──
+        elif choice == "9":
+            if not selected_ip:
+                ui.warn("No reader selected. Search first (option 1).")
+                continue
+            if not current_config:
+                ui.warn("No config loaded. Connect first (option 1 or 2).")
+                continue
+            try:
+                tcp_port = int(current_config.port_number)
+                with RfidClient(selected_ip, tcp_port) as client:
+                    info = client.get_reader_info(reader_adr)
+                reader_adr = info.address
+
+                box = (
+                    Box()
+                    .hdr("RFID READER INFORMATION")
+                    .div()
+                    .row("Address", str(info.address))
+                    .row("Firmware", f"v{info.version}")
+                    .row("Reader Type", f"0x{info.reader_type:02X}")
+                    .row("Protocol", f"0x{info.protocol_type:02X}")
+                    .row("Power", f"{info.power} dBm" if info.power != 0xFF else "Unknown")
+                    .row("Scan Time", f"{info.scan_time * 100} ms")
+                )
+                print("\n" + box.render() + "\n")
+            except Exception as e:
+                ui.err(f"Error: {e}")
+
+        # ── 10. Set RFID reader address ──
+        elif choice == "10":
+            if not selected_ip:
+                ui.warn("No reader selected. Search first (option 1).")
+                continue
+            if not current_config:
+                ui.warn("No config loaded. Connect first (option 1 or 2).")
+                continue
+            try:
+                tcp_port = int(current_config.port_number)
+                # Auto-read current address if not yet known
+                with RfidClient(selected_ip, tcp_port) as client:
+                    info = client.get_reader_info(reader_adr)
+                reader_adr = info.address
+                ui.info(f"Current reader address: {reader_adr}")
+
+                new_adr_str = input("  New reader address (0-254): ").strip()
+                if not new_adr_str:
+                    ui.info("Cancelled.")
+                    continue
+                new_adr = int(new_adr_str)
+                if not (0 <= new_adr <= 254):
+                    ui.warn("Address must be 0-254.")
+                    continue
+
+                ui.kv("Current address", str(reader_adr))
+                ui.kv("New address", str(new_adr))
+                confirm = input("  Apply? (y/n): ").strip().lower()
+                if confirm == "y":
+                    with RfidClient(selected_ip, tcp_port) as client:
+                        client.set_address(reader_adr, new_adr)
+                    ui.ok(f"Reader address changed: {reader_adr} -> {new_adr}")
+                    reader_adr = new_adr
+                else:
+                    ui.info("Cancelled.")
+            except Exception as e:
+                ui.err(f"Error: {e}")
+
         else:
             pass
-
-        print()
 
 
 # ─── Argument-based CLI ─────────────────────────────────────────────
@@ -356,6 +446,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_reboot.add_argument("ip", help="Reader IP address")
 
     sub.add_parser("interactive", help="Interactive menu (default)")
+
+    # ── RFID reader commands ──
+    p_ri = sub.add_parser("reader-info", help="Get RFID reader information (via TCP)")
+    p_ri.add_argument("ip", help="Reader IP address")
+    p_ri.add_argument("port", type=int, help="TCP port (from device network config)")
+    p_ri.add_argument("--adr", type=int, default=0, help="Reader address 0-254 (default: 0)")
+
+    p_sa = sub.add_parser("set-reader-addr", help="Set RFID reader address (via TCP)")
+    p_sa.add_argument("ip", help="Reader IP address")
+    p_sa.add_argument("port", type=int, help="TCP port (from device network config)")
+    p_sa.add_argument("new_addr", type=int, help="New reader address (0-254)")
+    p_sa.add_argument("--adr", type=int, default=0, help="Current reader address (default: 0)")
 
     return parser
 
@@ -407,3 +509,27 @@ def main(argv: list[str] | None = None) -> None:
             dev.connect()
             dev.reboot()
         print("Reboot command sent.")
+
+    elif args.command == "reader-info":
+        with RfidClient(args.ip, args.port) as client:
+            info = client.get_reader_info(args.adr)
+        box = (
+            Box()
+            .hdr("RFID READER INFORMATION")
+            .div()
+            .row("Address", str(info.address))
+            .row("Firmware", f"v{info.version}")
+            .row("Reader Type", f"0x{info.reader_type:02X}")
+            .row("Protocol", f"0x{info.protocol_type:02X}")
+            .row("Power", f"{info.power} dBm" if info.power != 0xFF else "Unknown")
+            .row("Scan Time", f"{info.scan_time * 100} ms")
+        )
+        print("\n" + box.render() + "\n")
+
+    elif args.command == "set-reader-addr":
+        with RfidClient(args.ip, args.port) as client:
+            client.set_address(args.adr, args.new_addr)
+        print(
+            f"Reader address changed: {args.adr} -> {args.new_addr}\n"
+            f"Use --adr {args.new_addr} for subsequent commands."
+        )

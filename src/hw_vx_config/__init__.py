@@ -11,11 +11,13 @@ __version__ = "1.0.0"
 
 from hw_vx_config.device import HwVxDevice
 from hw_vx_config.models import DeviceConfig, SearchResult
+from hw_vx_config.rfid import RfidClient
 from hw_vx_config.transport import HwVxNetworking
 
 __all__ = [
     "DeviceConfig",
     "HwVxDevice",
     "HwVxNetworking",
+    "RfidClient",
     "SearchResult",
 ]
