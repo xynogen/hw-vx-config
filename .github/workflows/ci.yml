@@ -26,6 +26,6 @@ jobs:
         run: |
           for ver in 3.10 3.11 3.12 3.13; do
             echo "::group::Python $ver"
-            uv run --python "$ver" -- pytest tests/ -q
+            uv run --extra dev --python "$ver" -- pytest tests/ -q
             echo "::endgroup::"
           done
