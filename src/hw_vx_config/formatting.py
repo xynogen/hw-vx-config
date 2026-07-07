@@ -69,10 +69,20 @@ class Box:
     def _geometry(self) -> tuple[int, int]:
         """Return (label_width, inner_width)."""
         labels = [e[1] for e in self._entries if e[0] == "row"]
+        values = [e[2] for e in self._entries if e[0] == "row"]
+        items = [e[1] for e in self._entries if e[0] in ("item", "hdr")]
+
         label_w = max((len(lbl) for lbl in labels), default=0)
-        # "  " + label_w + " : " + value  — value needs at least 1 space of padding
-        min_content = 2 + label_w + 3  # indent + label + " : "
-        inner = max(self._MIN_INNER, min_content + 1)
+        value_w = max((len(val) for val in values), default=0)
+        item_w = max((len(txt) for txt in items), default=0)
+
+        # row content: "  {label:<label_w} : {value}" → 2 + label_w + 3 + value_w
+        row_content = 2 + label_w + 3 + value_w
+        # item/hdr content: "  {text}" → 2 + item_w
+        item_content = 2 + item_w
+
+        # +1 for at least one trailing space before ║
+        inner = max(self._MIN_INNER, row_content + 1, item_content + 1)
         return label_w, inner
 
     def render(self) -> str:

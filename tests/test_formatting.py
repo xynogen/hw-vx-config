@@ -1,6 +1,6 @@
 """Tests for hw_vx_config.formatting."""
 
-from hw_vx_config.formatting import fmt_mac, fmt_option, format_config
+from hw_vx_config.formatting import Box, fmt_mac, fmt_option, format_config
 from hw_vx_config.models import DeviceConfig
 
 
@@ -64,3 +64,57 @@ class TestFormatConfig:
         """Even a blank config should render cleanly."""
         output = format_config(DeviceConfig())
         assert "NETWORK SETTINGS" in output
+
+
+class TestBoxOverflow:
+    """Box must expand to fit long values without breaking borders."""
+
+    def test_long_value_stays_inside_border(self) -> None:
+        long_val = "A" * 80
+        rendered = Box().row("Name", long_val).render()
+        for line in rendered.strip().splitlines():
+            # Every content line must end with ║
+            stripped = line.strip()
+            assert stripped.endswith("║") or stripped.endswith("╗") or stripped.endswith("╝")
+
+    def test_long_item_stays_inside_border(self) -> None:
+        long_text = "B" * 80
+        rendered = Box().item(long_text).render()
+        for line in rendered.strip().splitlines():
+            stripped = line.strip()
+            assert stripped.endswith("║") or stripped.endswith("╗") or stripped.endswith("╝")
+
+    def test_long_header_stays_inside_border(self) -> None:
+        long_hdr = "C" * 80
+        rendered = Box().hdr(long_hdr).render()
+        for line in rendered.strip().splitlines():
+            stripped = line.strip()
+            assert stripped.endswith("║") or stripped.endswith("╗") or stripped.endswith("╝")
+
+    def test_mixed_long_content(self) -> None:
+        """Mix of short labels + long values should all fit."""
+        rendered = (
+            Box()
+            .hdr("SHORT HEADER")
+            .div()
+            .row("Short", "val")
+            .row("Name", "X" * 100)
+            .item("Y" * 90)
+            .render()
+        )
+        for line in rendered.strip().splitlines():
+            stripped = line.strip()
+            assert (
+                stripped.endswith("║")
+                or stripped.endswith("╗")
+                or stripped.endswith("╝")
+                or stripped.endswith("╣")
+            )
+
+    def test_short_content_uses_minimum_width(self) -> None:
+        """Short content should still respect _MIN_INNER."""
+        rendered = Box().row("A", "B").render()
+        # Top border line: indent + ╔ + ═*inner + ╗
+        top_line = rendered.strip().splitlines()[0].strip()
+        border_width = top_line.count("═")
+        assert border_width >= Box._MIN_INNER
