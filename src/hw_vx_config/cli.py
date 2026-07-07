@@ -5,6 +5,8 @@ Command-line interface — both interactive (TUI menu) and scriptable sub-comman
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from hw_vx_config import ui
 from hw_vx_config.constants import (
@@ -30,37 +32,123 @@ BANNER = (
     .render()
 )
 
-# ─── Interactive helpers ─────────────────────────────────────────────
+MENU = (
+    Box()
+    .item("1. Search for readers")
+    .item("2. Connect to specific IP")
+    .div()
+    .item("3. Show current configuration")
+    .item("4. Change IP address")
+    .item("5. Enable/Disable DHCP")
+    .item("6. Change remote server")
+    .div()
+    .item("7. Edit & save full configuration")
+    .item("8. Reboot reader")
+    .div()
+    .item("9. RFID reader info")
+    .item("10. Set RFID reader address")
+    .div()
+    .item("q. Quit   l. List menu")
+)
 
 
-def _ask(label: str, current: str, options: dict[int, str] | None = None) -> str:
-    """Prompt for a single field; empty input keeps current value."""
-    if options:
-        hint = ", ".join(f"{k}={v}" for k, v in options.items())
-        val = input(f"    {label} [{current}] ({hint}): ").strip()
-    else:
-        val = input(f"    {label} [{current}]: ").strip()
-    return val if val else current
+# ─── Session state ───────────────────────────────────────────────────
+
+
+@dataclass
+class SessionState:
+    """Holds all mutable state for the interactive menu session."""
+
+    ip: str | None = None
+    mac: str | None = None
+    config: DeviceConfig | None = None
+    reader_adr: int = 0
+
+    @property
+    def connected(self) -> bool:
+        """True when a reader IP has been selected."""
+        return self.ip is not None
+
+    def update_from_config(self, cfg: DeviceConfig) -> None:
+        """Sync state after reading a config from the device."""
+        self.config = cfg
+        self.mac = cfg.mac_address or self.mac
+
+
+# ─── Device helper ───────────────────────────────────────────────────
+
+
+def _with_device(
+    ip: str,
+    callback: Callable[[HwVxDevice, DeviceConfig], object],
+) -> object:
+    """
+    Connect to *ip*, read config, run *callback(dev, cfg)*.
+
+    Handles common exceptions with actionable messages.
+    Returns whatever *callback* returns, or ``None`` on error.
+    """
+    try:
+        with HwVxDevice(ip) as dev:
+            dev.connect()
+            cfg = dev.get_config()
+            return callback(dev, cfg)
+    except TimeoutError:
+        ui.err("Reader not responding. Check IP and network cable.")
+    except ConnectionError as exc:
+        ui.err(f"Connection failed: {exc}")
+    except ValueError as exc:
+        ui.err(f"Bad response from device: {exc}")
+    return None
+
+
+def _require_connection(state: SessionState) -> bool:
+    """Print a warning and return False if no reader is selected."""
+    if not state.connected:
+        ui.warn("No reader selected. Search first (option 1).")
+        return False
+    return True
+
+
+def _require_config(state: SessionState) -> bool:
+    """Return False (with warning) if no config has been loaded yet."""
+    if not _require_connection(state):
+        return False
+    if state.config is None:
+        ui.warn("No config loaded. Connect first (option 1 or 2).")
+        return False
+    return True
+
+
+# ─── Search helpers ──────────────────────────────────────────────────
 
 
 def search_readers() -> list[SearchResult]:
     """Broadcast search for all readers on the network."""
     ui.info("🔍 Searching for readers (broadcast)...")
-    with HwVxNetworking("255.255.255.255") as net:
-        results = net.search()
+    try:
+        with HwVxNetworking("255.255.255.255") as net:
+            results = net.search()
+    except TimeoutError:
+        ui.err("Search timed out. Check network connection.")
+        return []
+    except OSError as exc:
+        ui.err(f"Network error: {exc}")
+        return []
 
     if not results:
         ui.warn("No readers found. Check cable and network.")
         return []
 
-    ui.info(f"Found {len(results)} reader(s):\n")
-    ui.info(f"{'#':<4} {'IP Address':<18} {'MAC Address':<20} {'Port':<8} {'Name'}")
-    ui.info(f"{'─' * 4} {'─' * 18} {'─' * 20} {'─' * 8} {'─' * 20}")
+    # Build results table using Box for consistent styling
+    box = Box().hdr(f"FOUND {len(results)} READER(S)").div()
     for i, r in enumerate(results, 1):
-        ui.info(
-            f"{i:<4} {r.ip_address:<18} {fmt_mac(r.mac_address):<20} {r.port_number:<8} {r.device_name}"
+        box.row(
+            f"#{i}",
+            f"{r.ip_address:<16} {fmt_mac(r.mac_address):<18} "
+            f"port {r.port_number:<6} {r.device_name}",
         )
-    print()
+    print("\n" + box.render() + "\n")
     return results
 
 
@@ -81,42 +169,367 @@ def select_reader(results: list[SearchResult]) -> SearchResult | None:
         ui.warn("Invalid choice.")
 
 
+# ─── Command handlers ────────────────────────────────────────────────
+#
+# Each handler receives the SessionState and returns None.
+# They are responsible for their own input prompts and error handling.
+
+
+def _cmd_search(state: SessionState) -> None:
+    """1. Search for readers."""
+    results = search_readers()
+    if not results:
+        return
+    r = select_reader(results)
+    if not r:
+        return
+    state.ip = r.ip_address
+    state.mac = r.mac_address
+
+    def _read(dev: HwVxDevice, cfg: DeviceConfig) -> DeviceConfig:
+        state.update_from_config(cfg)
+        return cfg
+
+    _with_device(state.ip, _read)
+
+
+def _cmd_connect(state: SessionState) -> None:
+    """2. Connect to specific IP."""
+    ip = input("  Enter reader IP address: ").strip()
+    if not ip:
+        return
+    if not ui.is_valid_ip(ip):
+        ui.warn("Invalid IP address format.")
+        return
+    state.ip = ip
+    state.mac = ""
+
+    def _read(_dev: HwVxDevice, cfg: DeviceConfig) -> DeviceConfig:
+        state.update_from_config(cfg)
+        return cfg
+
+    _with_device(state.ip, _read)
+
+
+def _cmd_show_config(state: SessionState) -> None:
+    """3. Show current configuration."""
+    if not _require_connection(state):
+        return
+
+    def _show(_dev: HwVxDevice, cfg: DeviceConfig) -> None:
+        state.update_from_config(cfg)
+        print_config(cfg)
+
+    _with_device(state.ip, _show)  # type: ignore[arg-type]
+
+
+def _cmd_change_ip(state: SessionState) -> None:
+    """4. Change IP address."""
+    if not _require_connection(state):
+        return
+
+    def _edit(_dev: HwVxDevice, cfg: DeviceConfig) -> None:
+        state.update_from_config(cfg)
+
+        ui.info("Edit network addressing (Enter = keep current value):\n")
+        new_ip = ui.ask(
+            "IP Address",
+            cfg.ip_address,
+            validator=ui.is_valid_ip,
+            error_msg="Invalid IP address (e.g. 192.168.1.100).",
+        )
+        new_mask = ui.ask(
+            "Subnet Mask",
+            cfg.subnet_mask,
+            validator=ui.is_valid_ip,
+            error_msg="Invalid subnet mask.",
+        )
+        new_gw = ui.ask(
+            "Gateway IP", cfg.gateway_ip, validator=ui.is_valid_ip, error_msg="Invalid gateway IP."
+        )
+
+        print()
+        ui.kv("IP Address", new_ip)
+        ui.kv("Subnet Mask", new_mask)
+        ui.kv("Gateway IP", new_gw)
+        print()
+
+        if ui.confirm("Apply and reboot?"):
+            # Need a fresh connection to apply
+            try:
+                with HwVxDevice(state.ip) as dev2:  # type: ignore[arg-type]
+                    dev2.connect()
+                    dev2.change_network(new_ip, new_mask, new_gw)
+                ui.ok("Network settings applied. Reader is rebooting...")
+                ui.hint("Wait ~5 seconds, then search again.")
+                state.ip = new_ip
+            except TimeoutError:
+                ui.err("Reader not responding during apply.")
+            except ConnectionError as exc:
+                ui.err(f"Connection failed during apply: {exc}")
+        else:
+            ui.info("Cancelled.")
+
+    _with_device(state.ip, _edit)  # type: ignore[arg-type]
+
+
+def _cmd_dhcp(state: SessionState) -> None:
+    """5. Enable/Disable DHCP."""
+    if not _require_connection(state):
+        return
+    ui.info("1. Enable DHCP")
+    ui.info("2. Disable DHCP (use static IP)")
+    sub = input("  Select: ").strip()
+    if sub not in ("1", "2"):
+        ui.warn("Invalid choice.")
+        return
+    enable = sub == "1"
+    action_word = "Enable" if enable else "Disable"
+    if not ui.confirm(f"{action_word} DHCP and reboot?"):
+        ui.info("Cancelled.")
+        return
+    try:
+        with HwVxDevice(state.ip) as dev:  # type: ignore[arg-type]
+            dev.connect()
+            dev.set_dhcp(enable)
+        action = "enabled" if enable else "disabled"
+        ui.ok(f"DHCP {action}. Reader is rebooting...")
+        if enable:
+            ui.hint("Reader will get IP from DHCP server.")
+            ui.hint("Search again after ~10 seconds to find new IP.")
+    except TimeoutError:
+        ui.err("Reader not responding.")
+    except ConnectionError as exc:
+        ui.err(f"Connection failed: {exc}")
+
+
+def _cmd_remote_server(state: SessionState) -> None:
+    """6. Change remote server."""
+    if not _require_connection(state):
+        return
+
+    def _edit(dev: HwVxDevice, cfg: DeviceConfig) -> None:
+        state.update_from_config(cfg)
+
+        ui.kv("Remote IP", cfg.remote_ip)
+        ui.kv("Remote Port", cfg.remote_port)
+        ui.kv("Work Mode", fmt_option(cfg.work_mode, WORK_MODE_OPTIONS))
+        print()
+
+        cfg.remote_ip = ui.ask(
+            "Remote IP", cfg.remote_ip, validator=ui.is_valid_ip, error_msg="Invalid IP address."
+        )
+        cfg.remote_port = ui.ask(
+            "Remote Port",
+            cfg.remote_port,
+            validator=ui.is_valid_port,
+            error_msg="Port must be 1-65535.",
+        )
+        cfg.work_mode = ui.ask("Work Mode", cfg.work_mode, WORK_MODE_OPTIONS)
+
+        if ui.confirm("Save and reboot?"):
+            dev.save_config(cfg)
+            ui.ok("Remote server updated. Reader is rebooting...")
+        else:
+            ui.info("Cancelled.")
+
+    _with_device(state.ip, _edit)  # type: ignore[arg-type]
+
+
+def _cmd_edit_full(state: SessionState) -> None:
+    """7. Edit & save full configuration."""
+    if not _require_connection(state):
+        return
+
+    def _edit(dev: HwVxDevice, cfg: DeviceConfig) -> None:
+        state.update_from_config(cfg)
+        print_config(cfg)
+
+        ui.info("Edit settings (press Enter to keep current value):\n")
+
+        ui.section("Network")
+        cfg.ip_address = ui.ask(
+            "IP Address", cfg.ip_address, validator=ui.is_valid_ip, error_msg="Invalid IP address."
+        )
+        cfg.subnet_mask = ui.ask(
+            "Subnet Mask",
+            cfg.subnet_mask,
+            validator=ui.is_valid_ip,
+            error_msg="Invalid subnet mask.",
+        )
+        cfg.gateway_ip = ui.ask(
+            "Gateway IP", cfg.gateway_ip, validator=ui.is_valid_ip, error_msg="Invalid gateway IP."
+        )
+        cfg.port_number = ui.ask(
+            "Port", cfg.port_number, validator=ui.is_valid_port, error_msg="Port must be 1-65535."
+        )
+        cfg.protocol = ui.ask("Protocol", cfg.protocol, PROTOCOL_OPTIONS)
+        cfg.work_mode = ui.ask("Work Mode", cfg.work_mode, WORK_MODE_OPTIONS)
+        cfg.remote_ip = ui.ask(
+            "Remote IP", cfg.remote_ip, validator=ui.is_valid_ip, error_msg="Invalid IP address."
+        )
+        cfg.remote_port = ui.ask(
+            "Remote Port",
+            cfg.remote_port,
+            validator=ui.is_valid_port,
+            error_msg="Port must be 1-65535.",
+        )
+        cfg.username = ui.ask("Username", cfg.username)
+        cfg.device_name = ui.ask("Device Name", cfg.device_name)
+
+        ui.section("Serial")
+        cfg.baud_rate = ui.ask("Baud Rate", cfg.baud_rate, BAUD_RATE_OPTIONS)
+        cfg.parity = ui.ask("Parity", cfg.parity, PARITY_OPTIONS)
+        cfg.data_bits = ui.ask("Data Bits", cfg.data_bits, DATA_BITS_OPTIONS)
+        cfg.dtr_mode = ui.ask("DTR Mode", cfg.dtr_mode, TOGGLE_OPTIONS)
+        cfg.rts = ui.ask("RTS", cfg.rts, TOGGLE_OPTIONS)
+
+        print()
+        print_config(cfg)
+        if ui.confirm("Save this configuration and reboot?"):
+            dev.save_config(cfg)
+            ui.ok("Configuration saved. Reader is rebooting...")
+            ui.hint("Wait ~5 seconds, then search again.")
+        else:
+            ui.info("Cancelled.")
+
+    _with_device(state.ip, _edit)  # type: ignore[arg-type]
+
+
+def _cmd_reboot(state: SessionState) -> None:
+    """8. Reboot reader."""
+    if not _require_connection(state):
+        return
+    if not ui.confirm(f"Reboot reader at {state.ip}?"):
+        ui.info("Cancelled.")
+        return
+    try:
+        with HwVxDevice(state.ip) as dev:  # type: ignore[arg-type]
+            dev.connect()
+            dev.reboot()
+        ui.ok("Reboot command sent.")
+    except TimeoutError:
+        ui.err("Reader not responding.")
+    except ConnectionError as exc:
+        ui.err(f"Connection failed: {exc}")
+
+
+def _cmd_rfid_info(state: SessionState) -> None:
+    """9. RFID reader info."""
+    if not _require_config(state):
+        return
+    assert state.config is not None  # guarded above
+    assert state.ip is not None
+    try:
+        tcp_port = int(state.config.port_number)
+        with RfidClient(state.ip, tcp_port) as client:
+            info = client.get_reader_info(state.reader_adr)
+        state.reader_adr = info.address
+
+        box = (
+            Box()
+            .hdr("RFID READER INFORMATION")
+            .div()
+            .row("Address", str(info.address))
+            .row("Firmware", f"v{info.version}")
+            .row("Reader Type", f"0x{info.reader_type:02X}")
+            .row("Protocol", f"0x{info.protocol_type:02X}")
+            .row("Power", f"{info.power} dBm" if info.power != 0xFF else "Unknown")
+            .row("Scan Time", f"{info.scan_time * 100} ms")
+        )
+        print("\n" + box.render() + "\n")
+    except TimeoutError:
+        ui.err("RFID reader not responding.")
+    except ConnectionError as exc:
+        ui.err(f"Connection failed: {exc}")
+    except ValueError as exc:
+        ui.err(f"Bad response: {exc}")
+    except RuntimeError as exc:
+        ui.err(f"RFID error: {exc}")
+
+
+def _cmd_set_rfid_addr(state: SessionState) -> None:
+    """10. Set RFID reader address."""
+    if not _require_config(state):
+        return
+    assert state.config is not None
+    assert state.ip is not None
+    try:
+        tcp_port = int(state.config.port_number)
+        with RfidClient(state.ip, tcp_port) as client:
+            info = client.get_reader_info(state.reader_adr)
+        state.reader_adr = info.address
+        ui.info(f"Current reader address: {state.reader_adr}")
+
+        new_adr_str = input("  New reader address (0-254): ").strip()
+        if not new_adr_str:
+            ui.info("Cancelled.")
+            return
+
+        try:
+            new_adr = int(new_adr_str)
+        except ValueError:
+            ui.warn("Address must be a number.")
+            return
+        if not (0 <= new_adr <= 254):
+            ui.warn("Address must be 0-254.")
+            return
+
+        ui.kv("Current address", str(state.reader_adr))
+        ui.kv("New address", str(new_adr))
+        if ui.confirm("Apply?"):
+            with RfidClient(state.ip, tcp_port) as client:
+                client.set_address(state.reader_adr, new_adr)
+            ui.ok(f"Reader address changed: {state.reader_adr} -> {new_adr}")
+            state.reader_adr = new_adr
+        else:
+            ui.info("Cancelled.")
+    except TimeoutError:
+        ui.err("RFID reader not responding.")
+    except ConnectionError as exc:
+        ui.err(f"Connection failed: {exc}")
+    except ValueError as exc:
+        ui.err(f"Bad response: {exc}")
+    except RuntimeError as exc:
+        ui.err(f"RFID error: {exc}")
+
+
+# ─── Command dispatch table ──────────────────────────────────────────
+
+COMMANDS: dict[str, Callable[[SessionState], None]] = {
+    "1": _cmd_search,
+    "2": _cmd_connect,
+    "3": _cmd_show_config,
+    "4": _cmd_change_ip,
+    "5": _cmd_dhcp,
+    "6": _cmd_remote_server,
+    "7": _cmd_edit_full,
+    "8": _cmd_reboot,
+    "9": _cmd_rfid_info,
+    "10": _cmd_set_rfid_addr,
+}
+
+
 # ─── Interactive menu ────────────────────────────────────────────────
 
 
 def interactive_menu() -> None:
-    """Main interactive menu loop."""
+    """Main interactive menu loop with Ctrl+C handling."""
+    try:
+        _run_menu(SessionState())
+    except KeyboardInterrupt:
+        print()
+        ui.info("Bye! 👋")
 
-    selected_ip: str | None = None
-    selected_mac: str | None = None
-    current_config: DeviceConfig | None = None
-    reader_adr: int = 0  # RFID reader address, discovered via option 9
 
-    _menu = (
-        Box()
-        .item("1. Search for readers")
-        .item("2. Connect to specific IP")
-        .div()
-        .item("3. Show current configuration")
-        .item("4. Change IP address")
-        .item("5. Enable/Disable DHCP")
-        .item("6. Change remote server")
-        .div()
-        .item("7. Edit & save full configuration")
-        .item("8. Reboot reader")
-        .div()
-        .item("9. RFID reader info")
-        .item("10. Set RFID reader address")
-        .div()
-        .item("q. Quit   l. List menu")
-    )
-
+def _run_menu(state: SessionState) -> None:
+    """Inner menu loop — separated for testability."""
     print(BANNER)
-    print(_menu.render())
+    print(MENU.render())
 
     while True:
-        if selected_ip:
-            ui.info(f"📡 Connected: {selected_ip} ({fmt_mac(selected_mac or '')})")
+        if state.connected:
+            ui.info(f"📡 Connected: {state.ip} ({fmt_mac(state.mac or '')})")
 
         choice = input("\n  Select option: ").strip()
 
@@ -125,282 +538,12 @@ def interactive_menu() -> None:
             break
 
         if choice in ("l", "L"):
-            print(_menu.render())
+            print(MENU.render())
             continue
 
-        # ── 1. Search ──
-        if choice == "1":
-            results = search_readers()
-            if results:
-                r = select_reader(results)
-                if r:
-                    selected_ip = r.ip_address
-                    selected_mac = r.mac_address
-                    try:
-                        with HwVxDevice(selected_ip) as dev:
-                            dev.connect()
-                            current_config = dev.get_config()
-                            selected_mac = current_config.mac_address or selected_mac
-                    except Exception as e:
-                        ui.warn(f"Could not read config: {e}")
-
-        # ── 2. Connect to specific IP ──
-        elif choice == "2":
-            ip = input("  Enter reader IP address: ").strip()
-            if ip:
-                selected_ip = ip
-                selected_mac = ""
-                try:
-                    with HwVxDevice(selected_ip) as dev:
-                        dev.connect()
-                        current_config = dev.get_config()
-                        selected_mac = current_config.mac_address or selected_mac
-                except Exception as e:
-                    ui.warn(f"Could not read config: {e}")
-
-        # ── 3. Show config ──
-        elif choice == "3":
-            if not selected_ip:
-                ui.warn("No reader selected. Search first (option 1).")
-                continue
-            try:
-                with HwVxDevice(selected_ip) as dev:
-                    dev.connect()
-                    current_config = dev.get_config()
-                    selected_mac = current_config.mac_address or selected_mac
-                    print_config(current_config)
-            except Exception as e:
-                ui.err(f"Error: {e}")
-
-        # ── 4. Change IP ──
-        elif choice == "4":
-            if not selected_ip:
-                ui.warn("No reader selected. Search first (option 1).")
-                continue
-            try:
-                # Read current values so user can press Enter to keep them
-                with HwVxDevice(selected_ip) as dev:
-                    dev.connect()
-                    cfg = dev.get_config()
-                    current_config = cfg
-                    selected_mac = cfg.mac_address or selected_mac
-
-                ui.info("Edit network addressing (Enter = keep current value):\n")
-                new_ip = _ask("IP Address", cfg.ip_address)
-                new_mask = _ask("Subnet Mask", cfg.subnet_mask)
-                new_gw = _ask("Gateway IP", cfg.gateway_ip)
-
-                print()
-                ui.kv("IP Address", new_ip)
-                ui.kv("Subnet Mask", new_mask)
-                ui.kv("Gateway IP", new_gw)
-                print()
-
-                confirm = input("  Apply and reboot? (y/n): ").strip().lower()
-                if confirm == "y":
-                    with HwVxDevice(selected_ip) as dev:
-                        dev.connect()
-                        dev.change_network(new_ip, new_mask, new_gw)
-                    ui.ok("Network settings applied. Reader is rebooting...")
-                    ui.hint("Wait ~5 seconds, then search again.")
-                    selected_ip = new_ip
-                else:
-                    ui.info("Cancelled.")
-            except Exception as e:
-                ui.err(f"Error: {e}")
-
-        # ── 5. DHCP ──
-        elif choice == "5":
-            if not selected_ip:
-                ui.warn("No reader selected. Search first (option 1).")
-                continue
-            ui.info("1. Enable DHCP")
-            ui.info("2. Disable DHCP (use static IP)")
-            sub = input("  Select: ").strip()
-            if sub in ("1", "2"):
-                enable = sub == "1"
-                confirm = (
-                    input(f"  {'Enable' if enable else 'Disable'} DHCP and reboot? (y/n): ")
-                    .strip()
-                    .lower()
-                )
-                if confirm == "y":
-                    try:
-                        with HwVxDevice(selected_ip) as dev:
-                            dev.connect()
-                            dev.set_dhcp(enable)
-                        action = "enabled" if enable else "disabled"
-                        ui.ok(f"DHCP {action}. Reader is rebooting...")
-                        if enable:
-                            ui.hint("Reader will get IP from DHCP server.")
-                            ui.hint("Search again after ~10 seconds to find new IP.")
-                    except Exception as e:
-                        ui.err(f"Error: {e}")
-
-        # ── 6. Change remote server ──
-        elif choice == "6":
-            if not selected_ip:
-                ui.warn("No reader selected. Search first (option 1).")
-                continue
-            try:
-                with HwVxDevice(selected_ip) as dev:
-                    dev.connect()
-                    cfg = dev.get_config()
-
-                    ui.kv("Remote IP", cfg.remote_ip)
-                    ui.kv("Remote Port", cfg.remote_port)
-                    ui.kv("Work Mode", fmt_option(cfg.work_mode, WORK_MODE_OPTIONS))
-                    print()
-
-                    new_remote_ip = input(f"  Remote IP [{cfg.remote_ip}]: ").strip()
-                    new_remote_port = input(f"  Remote Port [{cfg.remote_port}]: ").strip()
-                    new_work_mode = input(
-                        f"  Work Mode [{cfg.work_mode}] (0=Server, 1=Client): "
-                    ).strip()
-
-                    cfg.remote_ip = new_remote_ip or cfg.remote_ip
-                    cfg.remote_port = new_remote_port or cfg.remote_port
-                    cfg.work_mode = new_work_mode or cfg.work_mode
-
-                    confirm = input("  Save and reboot? (y/n): ").strip().lower()
-                    if confirm == "y":
-                        dev.save_config(cfg)
-                        ui.ok("Remote server updated. Reader is rebooting...")
-                    else:
-                        ui.info("Cancelled.")
-            except Exception as e:
-                ui.err(f"Error: {e}")
-
-        # ── 7. Edit full config ──
-        elif choice == "7":
-            if not selected_ip:
-                ui.warn("No reader selected. Search first (option 1).")
-                continue
-            try:
-                with HwVxDevice(selected_ip) as dev:
-                    dev.connect()
-                    cfg = dev.get_config()
-                    current_config = cfg
-                    selected_mac = cfg.mac_address or selected_mac
-                    print_config(cfg)
-
-                    ui.info("Edit settings (press Enter to keep current value):\n")
-
-                    ui.section("Network")
-                    cfg.ip_address = _ask("IP Address", cfg.ip_address)
-                    cfg.subnet_mask = _ask("Subnet Mask", cfg.subnet_mask)
-                    cfg.gateway_ip = _ask("Gateway IP", cfg.gateway_ip)
-                    cfg.port_number = _ask("Port", cfg.port_number)
-                    cfg.protocol = _ask("Protocol", cfg.protocol, PROTOCOL_OPTIONS)
-                    cfg.work_mode = _ask("Work Mode", cfg.work_mode, WORK_MODE_OPTIONS)
-                    cfg.remote_ip = _ask("Remote IP", cfg.remote_ip)
-                    cfg.remote_port = _ask("Remote Port", cfg.remote_port)
-                    cfg.username = _ask("Username", cfg.username)
-                    cfg.device_name = _ask("Device Name", cfg.device_name)
-
-                    ui.section("Serial")
-                    cfg.baud_rate = _ask("Baud Rate", cfg.baud_rate, BAUD_RATE_OPTIONS)
-                    cfg.parity = _ask("Parity", cfg.parity, PARITY_OPTIONS)
-                    cfg.data_bits = _ask("Data Bits", cfg.data_bits, DATA_BITS_OPTIONS)
-                    cfg.dtr_mode = _ask("DTR Mode", cfg.dtr_mode, TOGGLE_OPTIONS)
-                    cfg.rts = _ask("RTS", cfg.rts, TOGGLE_OPTIONS)
-
-                    print()
-                    print_config(cfg)
-                    confirm = input("  Save this configuration and reboot? (y/n): ").strip().lower()
-                    if confirm == "y":
-                        dev.save_config(cfg)
-                        ui.ok("Configuration saved. Reader is rebooting...")
-                        ui.hint("Wait ~5 seconds, then search again.")
-                    else:
-                        ui.info("Cancelled.")
-            except Exception as e:
-                ui.err(f"Error: {e}")
-
-        # ── 8. Reboot ──
-        elif choice == "8":
-            if not selected_ip:
-                ui.warn("No reader selected. Search first (option 1).")
-                continue
-            confirm = input(f"  Reboot reader at {selected_ip}? (y/n): ").strip().lower()
-            if confirm == "y":
-                try:
-                    with HwVxDevice(selected_ip) as dev:
-                        dev.connect()
-                        dev.reboot()
-                    ui.ok("Reboot command sent.")
-                except Exception as e:
-                    ui.err(f"Error: {e}")
-
-        # ── 9. RFID reader info ──
-        elif choice == "9":
-            if not selected_ip:
-                ui.warn("No reader selected. Search first (option 1).")
-                continue
-            if not current_config:
-                ui.warn("No config loaded. Connect first (option 1 or 2).")
-                continue
-            try:
-                tcp_port = int(current_config.port_number)
-                with RfidClient(selected_ip, tcp_port) as client:
-                    info = client.get_reader_info(reader_adr)
-                reader_adr = info.address
-
-                box = (
-                    Box()
-                    .hdr("RFID READER INFORMATION")
-                    .div()
-                    .row("Address", str(info.address))
-                    .row("Firmware", f"v{info.version}")
-                    .row("Reader Type", f"0x{info.reader_type:02X}")
-                    .row("Protocol", f"0x{info.protocol_type:02X}")
-                    .row("Power", f"{info.power} dBm" if info.power != 0xFF else "Unknown")
-                    .row("Scan Time", f"{info.scan_time * 100} ms")
-                )
-                print("\n" + box.render() + "\n")
-            except Exception as e:
-                ui.err(f"Error: {e}")
-
-        # ── 10. Set RFID reader address ──
-        elif choice == "10":
-            if not selected_ip:
-                ui.warn("No reader selected. Search first (option 1).")
-                continue
-            if not current_config:
-                ui.warn("No config loaded. Connect first (option 1 or 2).")
-                continue
-            try:
-                tcp_port = int(current_config.port_number)
-                # Auto-read current address if not yet known
-                with RfidClient(selected_ip, tcp_port) as client:
-                    info = client.get_reader_info(reader_adr)
-                reader_adr = info.address
-                ui.info(f"Current reader address: {reader_adr}")
-
-                new_adr_str = input("  New reader address (0-254): ").strip()
-                if not new_adr_str:
-                    ui.info("Cancelled.")
-                    continue
-                new_adr = int(new_adr_str)
-                if not (0 <= new_adr <= 254):
-                    ui.warn("Address must be 0-254.")
-                    continue
-
-                ui.kv("Current address", str(reader_adr))
-                ui.kv("New address", str(new_adr))
-                confirm = input("  Apply? (y/n): ").strip().lower()
-                if confirm == "y":
-                    with RfidClient(selected_ip, tcp_port) as client:
-                        client.set_address(reader_adr, new_adr)
-                    ui.ok(f"Reader address changed: {reader_adr} -> {new_adr}")
-                    reader_adr = new_adr
-                else:
-                    ui.info("Cancelled.")
-            except Exception as e:
-                ui.err(f"Error: {e}")
-
-        else:
-            pass
+        handler = COMMANDS.get(choice)
+        if handler:
+            handler(state)
 
 
 # ─── Argument-based CLI ─────────────────────────────────────────────
@@ -476,55 +619,87 @@ def main(argv: list[str] | None = None) -> None:
         search_readers()
 
     elif args.command == "config":
-        with HwVxDevice(args.ip) as dev:
-            dev.connect()
-            cfg = dev.get_config()
-            print_config(cfg)
+        try:
+            with HwVxDevice(args.ip) as dev:
+                dev.connect()
+                cfg = dev.get_config()
+                print_config(cfg)
+        except TimeoutError:
+            ui.err("Reader not responding. Check IP and network cable.")
+        except ConnectionError as exc:
+            ui.err(f"Connection failed: {exc}")
 
     elif args.command == "set-ip":
-        with HwVxDevice(args.ip) as dev:
-            dev.connect()
-            new_cfg: DeviceConfig | None = (
-                dev.get_config() if (args.mask is None or args.gateway is None) else None
-            )
-            mask = args.mask or (new_cfg.subnet_mask if new_cfg is not None else "255.255.255.0")
-            gateway = args.gateway or (new_cfg.gateway_ip if new_cfg is not None else "0.0.0.0")
-            dev.change_network(args.new_ip, mask, gateway)
-        print(f"IP changed to {args.new_ip} (mask={mask} gw={gateway}). Reader rebooting...")
+        try:
+            with HwVxDevice(args.ip) as dev:
+                dev.connect()
+                new_cfg: DeviceConfig | None = (
+                    dev.get_config() if (args.mask is None or args.gateway is None) else None
+                )
+                mask = args.mask or (
+                    new_cfg.subnet_mask if new_cfg is not None else "255.255.255.0"
+                )
+                gateway = args.gateway or (new_cfg.gateway_ip if new_cfg is not None else "0.0.0.0")
+                dev.change_network(args.new_ip, mask, gateway)
+            print(f"IP changed to {args.new_ip} (mask={mask} gw={gateway}). Reader rebooting...")
+        except TimeoutError:
+            ui.err("Reader not responding.")
+        except ConnectionError as exc:
+            ui.err(f"Connection failed: {exc}")
 
     elif args.command == "dhcp":
-        with HwVxDevice(args.ip) as dev:
-            dev.connect()
-            dev.set_dhcp(args.state == "on")
-        state = "enabled" if args.state == "on" else "disabled"
-        print(f"DHCP {state}. Reader rebooting...")
+        try:
+            with HwVxDevice(args.ip) as dev:
+                dev.connect()
+                dev.set_dhcp(args.state == "on")
+            state_str = "enabled" if args.state == "on" else "disabled"
+            print(f"DHCP {state_str}. Reader rebooting...")
+        except TimeoutError:
+            ui.err("Reader not responding.")
+        except ConnectionError as exc:
+            ui.err(f"Connection failed: {exc}")
 
     elif args.command == "reboot":
-        with HwVxDevice(args.ip) as dev:
-            dev.connect()
-            dev.reboot()
-        print("Reboot command sent.")
+        try:
+            with HwVxDevice(args.ip) as dev:
+                dev.connect()
+                dev.reboot()
+            print("Reboot command sent.")
+        except TimeoutError:
+            ui.err("Reader not responding.")
+        except ConnectionError as exc:
+            ui.err(f"Connection failed: {exc}")
 
     elif args.command == "reader-info":
-        with RfidClient(args.ip, args.port) as client:
-            info = client.get_reader_info(args.adr)
-        box = (
-            Box()
-            .hdr("RFID READER INFORMATION")
-            .div()
-            .row("Address", str(info.address))
-            .row("Firmware", f"v{info.version}")
-            .row("Reader Type", f"0x{info.reader_type:02X}")
-            .row("Protocol", f"0x{info.protocol_type:02X}")
-            .row("Power", f"{info.power} dBm" if info.power != 0xFF else "Unknown")
-            .row("Scan Time", f"{info.scan_time * 100} ms")
-        )
-        print("\n" + box.render() + "\n")
+        try:
+            with RfidClient(args.ip, args.port) as client:
+                info = client.get_reader_info(args.adr)
+            box = (
+                Box()
+                .hdr("RFID READER INFORMATION")
+                .div()
+                .row("Address", str(info.address))
+                .row("Firmware", f"v{info.version}")
+                .row("Reader Type", f"0x{info.reader_type:02X}")
+                .row("Protocol", f"0x{info.protocol_type:02X}")
+                .row("Power", f"{info.power} dBm" if info.power != 0xFF else "Unknown")
+                .row("Scan Time", f"{info.scan_time * 100} ms")
+            )
+            print("\n" + box.render() + "\n")
+        except TimeoutError:
+            ui.err("RFID reader not responding.")
+        except ConnectionError as exc:
+            ui.err(f"Connection failed: {exc}")
 
     elif args.command == "set-reader-addr":
-        with RfidClient(args.ip, args.port) as client:
-            client.set_address(args.adr, args.new_addr)
-        print(
-            f"Reader address changed: {args.adr} -> {args.new_addr}\n"
-            f"Use --adr {args.new_addr} for subsequent commands."
-        )
+        try:
+            with RfidClient(args.ip, args.port) as client:
+                client.set_address(args.adr, args.new_addr)
+            print(
+                f"Reader address changed: {args.adr} -> {args.new_addr}\n"
+                f"Use --adr {args.new_addr} for subsequent commands."
+            )
+        except TimeoutError:
+            ui.err("RFID reader not responding.")
+        except ConnectionError as exc:
+            ui.err(f"Connection failed: {exc}")
