@@ -266,6 +266,35 @@ class RfidClient:
             scan_time=d[7] if len(d) > 7 else 0,
         )
 
+    def discover_address(self) -> tuple[ReaderInfo, int]:
+        """
+        Find the reader's real address via broadcast.
+
+        The HW-VX module's network config exposes the *module*'s TCP port,
+        but the *reader* behind the serial port lives at a 0-254 address
+        that is set on the reader itself — and that address is not visible
+        in the network config. UHFReader18 guarantees that every reader on
+        the bus answers to the broadcast address ``0xFF`` and reveals its
+        real address in the reply's Adr byte. We use that single round-trip
+        to learn the address, then return it so the caller can talk to the
+        reader directly.
+
+        Raises
+        ------
+        ConnectionError
+            If the reader doesn't reply to broadcast — i.e. it's dead or
+            the serial link is broken (not just an address mismatch).
+        """
+        try:
+            info = self.get_reader_info(0xFF)
+        except (TimeoutError, ConnectionError) as exc:
+            # Normalise to ConnectionError: TimeoutError and ConnectionError
+            # are sibling OSError subclasses, so callers need a single except.
+            raise ConnectionError(
+                "Reader did not respond to broadcast — check power and serial wiring"
+            ) from exc
+        return info, info.address
+
     def set_address(self, current_adr: int, new_adr: int) -> RfidResponse:
         """
         Set a new reader address (Cmd 0x24).

@@ -62,6 +62,8 @@ class SessionState:
     ip: str | None = None
     mac: str | None = None
     config: DeviceConfig | None = None
+    # The reader's real address (0-254) is discovered on demand via
+    # broadcast, so we don't need to remember it across calls.
     reader_adr: int = 0
 
     @property
@@ -423,8 +425,12 @@ def _cmd_rfid_info(state: SessionState) -> None:
     try:
         tcp_port = int(state.config.port_number)
         with RfidClient(state.ip, tcp_port) as client:
-            info = client.get_reader_info(state.reader_adr)
-        state.reader_adr = info.address
+            info, actual_adr = client.discover_address()
+        # Always re-discover via broadcast so this works on any reader,
+        # regardless of what address it has been commissioned with.
+        if actual_adr != state.reader_adr:
+            ui.hint(f"Reader address: {actual_adr}")
+        state.reader_adr = actual_adr
 
         box = (
             Box()
@@ -439,7 +445,7 @@ def _cmd_rfid_info(state: SessionState) -> None:
         )
         print("\n" + box.render() + "\n")
     except TimeoutError:
-        ui.err("RFID reader not responding.")
+        ui.err("RFID reader not responding to broadcast — check power and serial wiring.")
     except ConnectionError as exc:
         ui.err(f"Connection failed: {exc}")
     except ValueError as exc:
@@ -457,9 +463,9 @@ def _cmd_set_rfid_addr(state: SessionState) -> None:
     try:
         tcp_port = int(state.config.port_number)
         with RfidClient(state.ip, tcp_port) as client:
-            info = client.get_reader_info(state.reader_adr)
-        state.reader_adr = info.address
-        ui.info(f"Current reader address: {state.reader_adr}")
+            _info, current_adr = client.discover_address()
+        state.reader_adr = current_adr
+        ui.info(f"Current reader address: {current_adr}")
 
         new_adr_str = input("  New reader address (0-254): ").strip()
         if not new_adr_str:
@@ -475,17 +481,17 @@ def _cmd_set_rfid_addr(state: SessionState) -> None:
             ui.warn("Address must be 0-254.")
             return
 
-        ui.kv("Current address", str(state.reader_adr))
+        ui.kv("Current address", str(current_adr))
         ui.kv("New address", str(new_adr))
         if ui.confirm("Apply?"):
             with RfidClient(state.ip, tcp_port) as client:
-                client.set_address(state.reader_adr, new_adr)
-            ui.ok(f"Reader address changed: {state.reader_adr} -> {new_adr}")
+                client.set_address(current_adr, new_adr)
+            ui.ok(f"Reader address changed: {current_adr} -> {new_adr}")
             state.reader_adr = new_adr
         else:
             ui.info("Cancelled.")
     except TimeoutError:
-        ui.err("RFID reader not responding.")
+        ui.err("RFID reader not responding to broadcast — check power and serial wiring.")
     except ConnectionError as exc:
         ui.err(f"Connection failed: {exc}")
     except ValueError as exc:
@@ -673,7 +679,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "reader-info":
         try:
             with RfidClient(args.ip, args.port) as client:
-                info = client.get_reader_info(args.adr)
+                info, _actual_adr = client.discover_address()
             box = (
                 Box()
                 .hdr("RFID READER INFORMATION")
@@ -687,19 +693,21 @@ def main(argv: list[str] | None = None) -> None:
             )
             print("\n" + box.render() + "\n")
         except TimeoutError:
-            ui.err("RFID reader not responding.")
+            ui.err("RFID reader not responding to broadcast \u2014 check power and serial wiring.")
         except ConnectionError as exc:
             ui.err(f"Connection failed: {exc}")
 
     elif args.command == "set-reader-addr":
         try:
             with RfidClient(args.ip, args.port) as client:
-                client.set_address(args.adr, args.new_addr)
+                _info, current_adr = client.discover_address()
+            with RfidClient(args.ip, args.port) as client:
+                client.set_address(current_adr, args.new_addr)
             print(
-                f"Reader address changed: {args.adr} -> {args.new_addr}\n"
+                f"Reader address changed: {current_adr} -> {args.new_addr}\n"
                 f"Use --adr {args.new_addr} for subsequent commands."
             )
         except TimeoutError:
-            ui.err("RFID reader not responding.")
+            ui.err("RFID reader not responding to broadcast \u2014 check power and serial wiring.")
         except ConnectionError as exc:
             ui.err(f"Connection failed: {exc}")

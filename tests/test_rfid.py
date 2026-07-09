@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -213,3 +214,69 @@ class TestRfidClient:
             pytest.raises(ConnectionError, match="No response"),
         ):
             client.get_reader_info()
+
+
+# -- discover_address (broadcast-first) --------------------------------
+
+
+_INFO_PAYLOAD = bytes([0x02, 0x24, 0x09, 0x03, 0x20, 0x00, 0x1E, 0x0A])
+
+
+def _info_frame(reply_adr: int) -> bytes:
+    """Build a valid Get Reader Information response frame for *reply_adr*."""
+    length = len(_INFO_PAYLOAD) + 5
+    payload = bytes([length, reply_adr, CMD_GET_READER_INFO, 0x00]) + _INFO_PAYLOAD
+    checksum = crc16(payload)
+    return payload + bytes([checksum & 0xFF, (checksum >> 8) & 0xFF])
+
+
+class TestDiscoverAddress:
+    """
+    ``RfidClient.discover_address`` sends exactly one frame — broadcast
+    ``0xFF`` — and returns ``(info, address)`` from the reply. The reader's
+    Adr byte in the response is the only truth: works on any device, no
+    cache, no matter what address it was commissioned with.
+    """
+
+    @patch("hw_vx_config.rfid.socket.socket")
+    def test_returns_address_from_broadcast(self, mock_socket_cls: MagicMock) -> None:
+        """Single broadcast frame; the reply's Adr byte is the reader's address."""
+        mock_sock = MagicMock()
+        mock_sock.recv.return_value = _info_frame(0x07)
+        mock_socket_cls.return_value = mock_sock
+
+        with RfidClient("192.168.1.100", 2077) as client:
+            info, adr = client.discover_address()
+
+        # Exactly one sendall (the broadcast).
+        assert mock_sock.sendall.call_count == 1
+        sent_frame = mock_sock.sendall.call_args_list[0].args[0]
+        # Frame layout: [Len, Adr, Cmd, ...CRC]; Adr byte must be 0xFF.
+        assert sent_frame[1] == 0xFF
+        assert adr == 0x07
+        assert info.version == "2.36"
+
+    @patch("hw_vx_config.rfid.socket.socket")
+    def test_dead_reader_raises_connection_error(self, mock_socket_cls: MagicMock) -> None:
+        """Broadcast times out → ConnectionError surfaces to the caller."""
+        mock_sock = MagicMock()
+        mock_sock.recv.side_effect = socket.timeout
+        mock_socket_cls.return_value = mock_sock
+
+        with (
+            RfidClient("192.168.1.100", 2077) as client,
+            pytest.raises(ConnectionError),
+        ):
+            client.discover_address()
+
+    @patch("hw_vx_config.rfid.socket.socket")
+    def test_address_zero_works(self, mock_socket_cls: MagicMock) -> None:
+        """Reader at address 0 is a valid case (and the common default)."""
+        mock_sock = MagicMock()
+        mock_sock.recv.return_value = _info_frame(0x00)
+        mock_socket_cls.return_value = mock_sock
+
+        with RfidClient("192.168.1.100", 2077) as client:
+            _info, adr = client.discover_address()
+
+        assert adr == 0x00
