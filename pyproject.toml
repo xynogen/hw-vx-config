@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hw-vx-config"
-version = "1.0.0"
+version = "1.0.1"
 description = "Network configuration tool for HW-VX6330K / HW-VX6346KL serial-to-Ethernet modules"
 readme = "README.md"
 license = "MIT"
