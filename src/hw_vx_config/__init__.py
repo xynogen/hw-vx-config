@@ -7,7 +7,7 @@ Protocol: UDP packets to port 65535 (HW-VX IP Protocol).
 No DLLs needed — pure Python sockets.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 from hw_vx_config.device import HwVxDevice
 from hw_vx_config.models import DeviceConfig, SearchResult

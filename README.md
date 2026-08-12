@@ -7,6 +7,7 @@
 
 Network configuration tool for HW-VX6330K / HW-VX6346KL serial-to-Ethernet modules on Linux.
 Sends UDP packets directly to the device — no DLLs, no runtime dependencies, pure stdlib.
+Interactive input uses stdlib `readline`, so arrow keys edit text instead of appearing as escape characters.
 
 Accepts a device IP or discovers via broadcast; reads and writes all network, serial, and
 advanced settings over the HW-VX UDP protocol (port 65535).
@@ -16,6 +17,7 @@ advanced settings over the HW-VX UDP protocol (port 65535).
 
 ## Table of Contents
 
+- [Features](#features)
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
 - [CLI Reference](#cli-reference)
@@ -27,6 +29,14 @@ advanced settings over the HW-VX UDP protocol (port 65535).
 - [Documentation](#documentation)
 - [Uninstall](#uninstall)
 - [License](#license)
+
+## Features
+
+- L2 discovery through `255.255.255.255` for readers on the same LAN/VLAN.
+- CIDR sweep discovery that sends `X` to every usable host using one UDP socket.
+- Runtime choice between unicast configuration and broadcast-by-MAC configuration.
+- Full network, serial, remote server, DHCP, reboot, and RFID reader operations.
+- Editable terminal input with arrow keys through stdlib `readline`.
 
 ## Requirements
 
@@ -54,8 +64,11 @@ pipx install hw-vx-config
 All operations take the current device IP as the first positional argument.
 
 ```bash
-# Discover all readers via broadcast
+# Discover all readers via limited broadcast (255.255.255.255)
 hw-vx-config search
+
+# Sweep every usable IP in a CIDR (172.27.43.65 through .78)
+hw-vx-config search --network 172.27.43.64/28
 
 # Print full configuration for a device
 hw-vx-config config <ip>
@@ -92,7 +105,9 @@ hw-vx-config set-reader-addr <ip> <port> 5 --adr 1
 
 ## Interactive Menu
 
-The interactive menu (`hw-vx-config` with no arguments) provides a numbered prompt:
+The interactive menu (`hw-vx-config` with no arguments) provides a numbered prompt.
+Press `l` to redraw only options currently available: discovery options before connecting,
+device operations after connecting, and RFID operations after configuration is loaded.
 
 ```
   ╔══════════════════════════════════════════════════════╗
@@ -115,9 +130,22 @@ The interactive menu (`hw-vx-config` with no arguments) provides a numbered prom
   ║  9. RFID reader info                                 ║  ← address, firmware, power (TCP binary)
   ║  10. Set RFID reader address                         ║  ← change reader Adr (0–254)
   ╠══════════════════════════════════════════════════════╣
-  ║  q. Quit   l. List menu                              ║
+  ║  q. Quit   l. List available options                 ║
   ╚══════════════════════════════════════════════════════╝
 ```
+
+Search first shows a discovery submenu:
+
+```text
+Discovery mode:
+1. L2 broadcast — fastest, same LAN/VLAN
+2. CIDR sweep — send to each usable IP
+```
+
+CIDR example: `172.27.43.64/28` sends `X` once to every usable address from
+`172.27.43.65` through `172.27.43.78`, then collects replies on one socket. A prefixless
+value such as `10.10.23.0` defaults to `/24`. After selecting a reader, choose unicast or
+broadcast-by-MAC mode.
 
 Option 2 is useful when the device is on a different subnet and broadcast cannot reach it.
 
@@ -141,7 +169,8 @@ python examples/server_uhf.py
 | Problem | Possible cause | Fix |
 |:---|:---|:---|
 | `search` returns nothing | Firewall blocks UDP 65535 | Open UDP 65535 inbound/outbound (`sudo ufw allow 65535/udp`) |
-| | Device on a different subnet | Use `hw-vx-config interactive` → option 2 (connect by IP) |
+| | Limited broadcast uses the wrong interface | Sweep a CIDR, e.g. `search --network 172.27.43.64/28` |
+| | Device on a routed subnet | CIDR sweep sends unicast `X` to each usable address; routing and UDP 65535 must permit it |
 | | Broadcast not reaching device | Ensure host and device share the same L2 network / VLAN |
 | Timeout on `config` / `set-ip` | Device IP changed or unreachable | Verify with `ping <ip>`; re-discover with `search` |
 | `Permission denied` on socket | Rare kernel policy | Run with `sudo` or check `sysctl net.ipv4.ip_unprivileged_port_start` |

@@ -2,9 +2,53 @@
 
 from __future__ import annotations
 
+import errno
+import os
+import pty
+import select
+import subprocess
+import sys
+import time
+from pathlib import Path
+
 import pytest
 
 from hw_vx_config import ui
+
+
+def test_arrow_keys_edit_interactive_input() -> None:
+    master, slave = pty.openpty()
+    env = os.environ | {"PYTHONPATH": str(Path(__file__).parents[1] / "src")}
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import hw_vx_config.ui; print('RESULT=' + input('> '))",
+        ],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        env=env,
+    )
+    os.close(slave)
+    os.write(master, b"ac\x1b[Db\n")
+
+    output = b""
+    deadline = time.monotonic() + 3
+    while proc.poll() is None and time.monotonic() < deadline:
+        ready, _, _ = select.select([master], [], [], 0.1)
+        if ready:
+            try:
+                output += os.read(master, 4096)
+            except OSError as exc:
+                if exc.errno != errno.EIO:
+                    raise
+                break
+
+    proc.wait(timeout=1)
+    os.close(master)
+    assert b"RESULT=abc" in output
+
 
 # ─── Output helpers ──────────────────────────────────────────────────
 

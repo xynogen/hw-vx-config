@@ -16,6 +16,10 @@ class TestBuildParser:
         args = parser.parse_args(["search"])
         assert args.command == "search"
 
+    def test_search_network(self) -> None:
+        args = build_parser().parse_args(["search", "--network", "10.10.0.0/24"])
+        assert args.network == "10.10.0.0/24"
+
     def test_config_requires_ip(self) -> None:
         parser = build_parser()
         with pytest.raises(SystemExit):
@@ -56,11 +60,11 @@ class TestVersionFlag:
         main(["--version"])
         captured = capsys.readouterr()
         assert "hw-vx-config" in captured.out
-        assert "1.0.0" in captured.out
+        assert "1.1.0" in captured.out
 
 
 class TestSearchCommand:
     def test_search_calls_search_readers(self) -> None:
         with patch("hw_vx_config.cli.search_readers", return_value=[]) as mock_search:
-            main(["search"])
-            mock_search.assert_called_once()
+            main(["search", "--network", "10.10.0.0/24"])
+            mock_search.assert_called_once_with("10.10.0.0/24")

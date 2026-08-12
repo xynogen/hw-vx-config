@@ -83,12 +83,18 @@ class HwVxNetworking:
     # ── discovery ────────────────────────────────────────────────────
 
     def search(self) -> list[SearchResult]:
-        """
-        Broadcast an echo (``X``) and collect all device responses.
-
-        Each reply has the form ``A{mac}/{port}`` from the device's IP.
-        """
+        """Broadcast an echo (``X``) and collect all device responses."""
         self.send("X")
+        return self._collect_search_results()
+
+    def search_targets(self, ip_addresses: list[str]) -> list[SearchResult]:
+        """Send ``X`` to each target, then collect replies on the same socket."""
+        for ip_address in ip_addresses:
+            self.sock.sendto(b"X", (ip_address, UDP_PORT))
+        return self._collect_search_results()
+
+    def _collect_search_results(self) -> list[SearchResult]:
+        """Collect search replies until the shared receive timeout expires."""
         results: list[SearchResult] = []
         for _ in range(255):
             try:

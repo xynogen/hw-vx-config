@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from types import TracebackType
 
 from hw_vx_config.models import DeviceConfig, SearchResult
 from hw_vx_config.transport import HwVxNetworking
@@ -24,20 +25,33 @@ class HwVxDevice:
         The current IP address of the target device.
     """
 
-    def __init__(self, ip_address: str) -> None:
+    def __init__(
+        self,
+        ip_address: str,
+        *,
+        mac_address: str = "",
+        broadcast: bool = False,
+        broadcast_ip: str = "255.255.255.255",
+    ) -> None:
         self.ip = ip_address
-        self.net = HwVxNetworking(ip_address)
-        self.mac: str = ""
+        self.broadcast = broadcast
+        self.broadcast_ip = broadcast_ip
+        self.net = HwVxNetworking(broadcast_ip if broadcast else ip_address)
+        self.mac = mac_address
 
     # ── connection ───────────────────────────────────────────────────
 
     def connect(self) -> SearchResult:
         """Search, select (``W{mac}``), and login (``L``) to a reader."""
-        results = self.net.search()
-        if not results:
-            raise ConnectionError(f"No reader found at {self.ip}")
-        r = results[0]
-        self.mac = r.mac_address
+        if self.mac:
+            # ponytail: caller must supply MAC from a prior scan; no identity revalidation.
+            r = SearchResult(mac_address=self.mac, ip_address=self.ip)
+        else:
+            results = self.net.search()
+            if not results:
+                raise ConnectionError(f"No reader found at {self.ip}")
+            r = results[0]
+            self.mac = r.mac_address
         self.net.request(f"W{self.mac}", retries=3)
         self.net.request("L", retries=3)
         return r
@@ -85,8 +99,11 @@ class HwVxDevice:
 
         self._send_config_pass(self.net.send, cfg, delay, login=True)
 
+        if self.broadcast:
+            return
+
         # Broadcast fallback
-        with HwVxNetworking("255.255.255.255") as broadcast:
+        with HwVxNetworking(self.broadcast_ip) as broadcast:
             broadcast.send(f"W{self.mac}")
             time.sleep(0.1)
             self._send_config_pass(broadcast.send, cfg, delay, login=True)
@@ -155,8 +172,11 @@ class HwVxDevice:
         s("E")
         time.sleep(0.2)
 
+        if self.broadcast:
+            return
+
         # Broadcast fallback
-        with HwVxNetworking("255.255.255.255") as broadcast:
+        with HwVxNetworking(self.broadcast_ip) as broadcast:
             broadcast.send(f"W{self.mac}")
             time.sleep(0.1)
             broadcast.send("L")
@@ -192,5 +212,10 @@ class HwVxDevice:
     def __enter__(self) -> HwVxDevice:
         return self
 
-    def __exit__(self, *exc: object) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.close()

@@ -34,6 +34,32 @@ def device(mock_transport: MagicMock) -> HwVxDevice:
 
 
 class TestConnect:
+    def test_directed_broadcast_uses_requested_target(self, mock_transport: MagicMock) -> None:
+        with patch("hw_vx_config.device.HwVxNetworking", return_value=mock_transport) as networking:
+            HwVxDevice(
+                "192.168.1.100",
+                mac_address="AA:BB:CC:DD:EE:FF",
+                broadcast=True,
+                broadcast_ip="10.10.0.255",
+            )
+
+        networking.assert_called_once_with("10.10.0.255")
+
+    def test_broadcast_with_known_mac_skips_second_scan(self, mock_transport: MagicMock) -> None:
+        with patch("hw_vx_config.device.HwVxNetworking", return_value=mock_transport) as networking:
+            dev = HwVxDevice(
+                "192.168.1.100",
+                mac_address="AA:BB:CC:DD:EE:FF",
+                broadcast=True,
+            )
+
+        result = dev.connect()
+
+        networking.assert_called_once_with("255.255.255.255")
+        mock_transport.search.assert_not_called()
+        mock_transport.request.assert_any_call("WAA:BB:CC:DD:EE:FF", retries=3)
+        assert result.ip_address == "192.168.1.100"
+
     def test_sets_mac_from_search(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
         result = device.connect()
         assert device.mac == "AA:BB:CC:DD:EE:FF"
@@ -96,6 +122,20 @@ class TestGetConfig:
 
 
 class TestSaveConfig:
+    def test_broadcast_mode_does_not_repeat_config_pass(
+        self, mock_transport: MagicMock, sample_config: DeviceConfig
+    ) -> None:
+        with patch("hw_vx_config.device.HwVxNetworking", return_value=mock_transport) as networking:
+            dev = HwVxDevice(
+                "192.168.1.100",
+                mac_address="AA:BB:CC:DD:EE:FF",
+                broadcast=True,
+            )
+            dev.save_config(sample_config)
+
+        networking.assert_called_once_with("255.255.255.255")
+        assert mock_transport.send.call_count == 22
+
     def test_sends_login_and_reboot(
         self, device: HwVxDevice, mock_transport: MagicMock, sample_config: DeviceConfig
     ) -> None:
@@ -140,6 +180,19 @@ class TestChangeNetwork:
 
         unicast_cmds = [c[0][0] for c in mock_transport.send.call_args_list]
         return unicast_cmds, broadcast_mock
+
+    def test_broadcast_mode_does_not_run_fallback_pass(self, mock_transport: MagicMock) -> None:
+        mock_transport.receive.return_value = ""
+        with patch("hw_vx_config.device.HwVxNetworking", return_value=mock_transport) as networking:
+            dev = HwVxDevice(
+                "192.168.1.100",
+                mac_address="AA:BB:CC:DD:EE:FF",
+                broadcast=True,
+            )
+            dev.change_network("10.0.0.50", "255.255.0.0", "10.0.0.1")
+
+        networking.assert_called_once_with("255.255.255.255")
+        assert mock_transport.send.call_count == 6
 
     def test_sends_ip_command(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
         cmds, _ = self._run(device, mock_transport)

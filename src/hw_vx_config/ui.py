@@ -5,6 +5,7 @@ cli.py calls these; never hardcodes spacing or prefixes directly.
 
 from __future__ import annotations
 
+import readline  # noqa: F401 -- prevents arrow keys appearing as escape text in input()
 from collections.abc import Callable
 
 _I = "  "  # base indent
@@ -45,9 +46,14 @@ def kv(label: str, value: str) -> None:
 # ─── Input helpers ───────────────────────────────────────────────────
 
 
+def text(prompt: str) -> str:
+    """Read editable text; readline handles arrows and other editing keys."""
+    return input(prompt).strip()
+
+
 def confirm(prompt: str) -> bool:
-    """Ask a yes/no question.  Returns True on 'y'."""
-    return input(f"{_I}{prompt} (y/n): ").strip().lower() == "y"
+    """Ask a yes/no question. Returns True on 'y'."""
+    return text(f"{_I}{prompt} (y/n): ").lower() == "y"
 
 
 # ─── Validators ──────────────────────────────────────────────────────
@@ -131,7 +137,7 @@ def ask(
         error_msg = f"Must be one of: {', '.join(str(k) for k in options)}"
 
     while True:
-        val = input(prompt).strip()
+        val = text(prompt)
         if not val:
             return current
         if validator and not validator(val):

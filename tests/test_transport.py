@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import socket
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -111,6 +111,17 @@ class TestSearch:
         assert r.ip_address == "192.168.1.100"
         assert r.username == "admin"
         assert r.device_name == "MyDevice"
+
+    def test_search_targets_sends_echo_to_each_ip(
+        self, networking: HwVxNetworking, mock_socket: MagicMock
+    ) -> None:
+        mock_socket.recvfrom.side_effect = socket.timeout
+
+        assert networking.search_targets(["10.10.23.1", "10.10.23.2"]) == []
+        assert mock_socket.sendto.call_args_list == [
+            call(b"X", ("10.10.23.1", 65535)),
+            call(b"X", ("10.10.23.2", 65535)),
+        ]
 
     def test_empty_when_no_replies(
         self, networking: HwVxNetworking, mock_socket: MagicMock

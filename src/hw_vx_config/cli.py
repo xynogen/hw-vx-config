@@ -5,6 +5,7 @@ Command-line interface — both interactive (TUI menu) and scriptable sub-comman
 from __future__ import annotations
 
 import argparse
+import ipaddress
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -32,24 +33,25 @@ BANNER = (
     .render()
 )
 
-MENU = (
-    Box()
-    .item("1. Search for readers")
-    .item("2. Connect to specific IP")
-    .div()
-    .item("3. Show current configuration")
-    .item("4. Change IP address")
-    .item("5. Enable/Disable DHCP")
-    .item("6. Change remote server")
-    .div()
-    .item("7. Edit & save full configuration")
-    .item("8. Reboot reader")
-    .div()
-    .item("9. RFID reader info")
-    .item("10. Set RFID reader address")
-    .div()
-    .item("q. Quit   l. List menu")
-)
+
+def _menu(state: SessionState) -> Box:
+    """Build menu containing only operations available in current session."""
+    box = (
+        Box()
+        .hdr("AVAILABLE OPTIONS")
+        .div()
+        .item("1. Search for readers")
+        .item("2. Connect to specific IP")
+    )
+    if state.connected:
+        box.div().item("3. Show current configuration").item("4. Change IP address").item(
+            "5. Enable/Disable DHCP"
+        ).item("6. Change remote server").item("7. Edit & save full configuration").item(
+            "8. Reboot reader"
+        )
+    if state.config is not None:
+        box.div().item("9. RFID reader info").item("10. Set RFID reader address")
+    return box.div().item("q. Quit   l. List available options")
 
 
 # ─── Session state ───────────────────────────────────────────────────
@@ -65,6 +67,8 @@ class SessionState:
     # The reader's real address (0-254) is discovered on demand via
     # broadcast, so we don't need to remember it across calls.
     reader_adr: int = 0
+    broadcast: bool = False
+    broadcast_ip: str = "255.255.255.255"
 
     @property
     def connected(self) -> bool:
@@ -83,6 +87,10 @@ class SessionState:
 def _with_device(
     ip: str,
     callback: Callable[[HwVxDevice, DeviceConfig], object],
+    *,
+    mac_address: str = "",
+    broadcast: bool = False,
+    broadcast_ip: str = "255.255.255.255",
 ) -> object:
     """
     Connect to *ip*, read config, run *callback(dev, cfg)*.
@@ -91,7 +99,12 @@ def _with_device(
     Returns whatever *callback* returns, or ``None`` on error.
     """
     try:
-        with HwVxDevice(ip) as dev:
+        with HwVxDevice(
+            ip,
+            mac_address=mac_address,
+            broadcast=broadcast,
+            broadcast_ip=broadcast_ip,
+        ) as dev:
             dev.connect()
             cfg = dev.get_config()
             return callback(dev, cfg)
@@ -125,12 +138,39 @@ def _require_config(state: SessionState) -> bool:
 # ─── Search helpers ──────────────────────────────────────────────────
 
 
-def search_readers() -> list[SearchResult]:
-    """Broadcast search for all readers on the network."""
-    ui.info("🔍 Searching for readers (broadcast)...")
+def _ip_network(network: str) -> ipaddress.IPv4Network:
+    """Parse IPv4 CIDR; prefixless values mean /24 for field convenience."""
+    return ipaddress.IPv4Network(network if "/" in network else f"{network}/24", strict=False)
+
+
+def _broadcast_ip(network: str | None) -> str:
+    """Return directed broadcast for a CIDR, or limited broadcast by default."""
+    if not network:
+        return "255.255.255.255"
+    return str(_ip_network(network).broadcast_address)
+
+
+def search_readers(network: str | None = None) -> list[SearchResult]:
+    """Broadcast search for all readers, optionally toward an IPv4 CIDR."""
     try:
-        with HwVxNetworking("255.255.255.255") as net:
-            results = net.search()
+        target = _broadcast_ip(network)
+    except (ipaddress.AddressValueError, ipaddress.NetmaskValueError):
+        ui.err(f"Invalid network: {network}. Use CIDR such as 10.10.0.0/24.")
+        return []
+
+    try:
+        if network:
+            parsed = _ip_network(network)
+            targets = [str(ip) for ip in parsed.hosts()]
+            host_range = f"{targets[0]} - {targets[-1]}" if targets else "no usable hosts"
+            ui.info(f"🔍 CIDR sweep: {parsed}")
+            ui.info(f"   {len(targets)} hosts: {host_range}")
+            with HwVxNetworking("255.255.255.255") as net:
+                results = net.search_targets(targets)
+        else:
+            ui.info(f"🔍 L2 broadcast ({target})")
+            with HwVxNetworking(target) as net:
+                results = net.search()
     except TimeoutError:
         ui.err("Search timed out. Check network connection.")
         return []
@@ -159,7 +199,7 @@ def select_reader(results: list[SearchResult]) -> SearchResult | None:
     if len(results) == 1:
         return results[0]
     while True:
-        choice = input("  Select reader # (or 'q' to cancel): ").strip()
+        choice = ui.text("  Select reader # (or 'q' to cancel): ")
         if choice.lower() == "q":
             return None
         try:
@@ -179,7 +219,29 @@ def select_reader(results: list[SearchResult]) -> SearchResult | None:
 
 def _cmd_search(state: SessionState) -> None:
     """1. Search for readers."""
-    results = search_readers()
+    print(
+        Box()
+        .hdr("DISCOVERY MODE")
+        .div()
+        .item("1. L2 broadcast — fastest, same LAN/VLAN")
+        .item("2. CIDR sweep — send to each usable IP")
+        .render()
+    )
+    while True:
+        discovery_mode = ui.text("  Discovery mode: ")
+        if discovery_mode in ("1", "2"):
+            break
+        ui.warn("Invalid choice.")
+
+    network: str | None = None
+    if discovery_mode == "2":
+        ui.hint("Example: 172.27.43.64/28 scans 172.27.43.65 - 172.27.43.78")
+        network = ui.text("  Target CIDR: ")
+        if not network:
+            ui.warn("CIDR is required for mode 2.")
+            return
+
+    results = search_readers(network)
     if not results:
         return
     r = select_reader(results)
@@ -188,11 +250,33 @@ def _cmd_search(state: SessionState) -> None:
     state.ip = r.ip_address
     state.mac = r.mac_address
 
+    print(
+        Box()
+        .hdr("CONFIGURATION MODE")
+        .div()
+        .item("1. Unicast — use reader IP")
+        .item("2. Broadcast — select reader by MAC")
+        .render()
+    )
+    while True:
+        mode = ui.text("  Connection mode: ")
+        if mode in ("1", "2"):
+            break
+        ui.warn("Invalid choice.")
+    state.broadcast = mode == "2"
+    state.broadcast_ip = _broadcast_ip(network or None)
+
     def _read(dev: HwVxDevice, cfg: DeviceConfig) -> DeviceConfig:
         state.update_from_config(cfg)
         return cfg
 
-    _with_device(state.ip, _read)
+    _with_device(
+        state.ip,
+        _read,
+        mac_address=state.mac,
+        broadcast=state.broadcast,
+        broadcast_ip=state.broadcast_ip,
+    )
 
 
 def _cmd_connect(state: SessionState) -> None:
@@ -205,6 +289,7 @@ def _cmd_connect(state: SessionState) -> None:
         return
     state.ip = ip
     state.mac = ""
+    state.broadcast = False
 
     def _read(_dev: HwVxDevice, cfg: DeviceConfig) -> DeviceConfig:
         state.update_from_config(cfg)
@@ -222,7 +307,13 @@ def _cmd_show_config(state: SessionState) -> None:
         state.update_from_config(cfg)
         print_config(cfg)
 
-    _with_device(state.ip, _show)  # type: ignore[arg-type]
+    _with_device(
+        state.ip,  # type: ignore[arg-type]
+        _show,
+        mac_address=state.mac or "",
+        broadcast=state.broadcast,
+        broadcast_ip=state.broadcast_ip,
+    )
 
 
 def _cmd_change_ip(state: SessionState) -> None:
@@ -257,11 +348,8 @@ def _cmd_change_ip(state: SessionState) -> None:
         print()
 
         if ui.confirm("Apply and reboot?"):
-            # Need a fresh connection to apply
             try:
-                with HwVxDevice(state.ip) as dev2:  # type: ignore[arg-type]
-                    dev2.connect()
-                    dev2.change_network(new_ip, new_mask, new_gw)
+                _dev.change_network(new_ip, new_mask, new_gw)
                 ui.ok("Network settings applied. Reader is rebooting...")
                 ui.hint("Wait ~5 seconds, then search again.")
                 state.ip = new_ip
@@ -272,7 +360,13 @@ def _cmd_change_ip(state: SessionState) -> None:
         else:
             ui.info("Cancelled.")
 
-    _with_device(state.ip, _edit)  # type: ignore[arg-type]
+    _with_device(
+        state.ip,  # type: ignore[arg-type]
+        _edit,
+        mac_address=state.mac or "",
+        broadcast=state.broadcast,
+        broadcast_ip=state.broadcast_ip,
+    )
 
 
 def _cmd_dhcp(state: SessionState) -> None:
@@ -291,7 +385,12 @@ def _cmd_dhcp(state: SessionState) -> None:
         ui.info("Cancelled.")
         return
     try:
-        with HwVxDevice(state.ip) as dev:  # type: ignore[arg-type]
+        with HwVxDevice(
+            state.ip,  # type: ignore[arg-type]
+            mac_address=state.mac or "",
+            broadcast=state.broadcast,
+            broadcast_ip=state.broadcast_ip,
+        ) as dev:
             dev.connect()
             dev.set_dhcp(enable)
         action = "enabled" if enable else "disabled"
@@ -335,7 +434,13 @@ def _cmd_remote_server(state: SessionState) -> None:
         else:
             ui.info("Cancelled.")
 
-    _with_device(state.ip, _edit)  # type: ignore[arg-type]
+    _with_device(
+        state.ip,  # type: ignore[arg-type]
+        _edit,
+        mac_address=state.mac or "",
+        broadcast=state.broadcast,
+        broadcast_ip=state.broadcast_ip,
+    )
 
 
 def _cmd_edit_full(state: SessionState) -> None:
@@ -395,7 +500,13 @@ def _cmd_edit_full(state: SessionState) -> None:
         else:
             ui.info("Cancelled.")
 
-    _with_device(state.ip, _edit)  # type: ignore[arg-type]
+    _with_device(
+        state.ip,  # type: ignore[arg-type]
+        _edit,
+        mac_address=state.mac or "",
+        broadcast=state.broadcast,
+        broadcast_ip=state.broadcast_ip,
+    )
 
 
 def _cmd_reboot(state: SessionState) -> None:
@@ -406,7 +517,12 @@ def _cmd_reboot(state: SessionState) -> None:
         ui.info("Cancelled.")
         return
     try:
-        with HwVxDevice(state.ip) as dev:  # type: ignore[arg-type]
+        with HwVxDevice(
+            state.ip,  # type: ignore[arg-type]
+            mac_address=state.mac or "",
+            broadcast=state.broadcast,
+            broadcast_ip=state.broadcast_ip,
+        ) as dev:
             dev.connect()
             dev.reboot()
         ui.ok("Reboot command sent.")
@@ -531,7 +647,7 @@ def interactive_menu() -> None:
 def _run_menu(state: SessionState) -> None:
     """Inner menu loop — separated for testability."""
     print(BANNER)
-    print(MENU.render())
+    print(_menu(state).render())
 
     while True:
         if state.connected:
@@ -544,7 +660,7 @@ def _run_menu(state: SessionState) -> None:
             break
 
         if choice in ("l", "L"):
-            print(MENU.render())
+            print(_menu(state).render())
             continue
 
         handler = COMMANDS.get(choice)
@@ -569,7 +685,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("search", help="Search for readers on the network")
+    p_search = sub.add_parser("search", help="Search for readers on the network")
+    p_search.add_argument(
+        "--network",
+        help="Sweep usable hosts in IPv4 CIDR, e.g. 172.27.43.64/28",
+    )
 
     p_cfg = sub.add_parser("config", help="Show reader configuration")
     p_cfg.add_argument("ip", help="Reader IP address")
@@ -622,7 +742,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.command == "search":
-        search_readers()
+        search_readers(args.network)
 
     elif args.command == "config":
         try:
