@@ -9,6 +9,8 @@ import ipaddress
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from uhfreader18 import RfidClient
+
 from hw_vx_config import ui
 from hw_vx_config.constants import (
     BAUD_RATE_OPTIONS,
@@ -21,7 +23,6 @@ from hw_vx_config.constants import (
 from hw_vx_config.device import HwVxDevice
 from hw_vx_config.formatting import Box, fmt_mac, fmt_option, print_config
 from hw_vx_config.models import DeviceConfig, SearchResult
-from hw_vx_config.rfid import RfidClient
 from hw_vx_config.transport import HwVxNetworking
 
 # ─── Banner ──────────────────────────────────────────────────────────

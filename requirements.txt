@@ -1,2 +1,2 @@
-# hw-vx-config runtime dependencies
-# (none — pure Python stdlib)
+# Runtime dependency for UHFReader18 command operations
+uhfreader18>=0.1,<0.2

@@ -8,7 +8,7 @@ Usage:
     python examples/rfid_usage.py
 """
 
-from hw_vx_config.rfid import RfidClient
+from uhfreader18 import RfidClient
 
 READER_IP = "192.168.1.100"
 READER_PORT = 2077  # TCP port from the device's network config

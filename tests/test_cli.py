@@ -9,6 +9,15 @@ import pytest
 from hw_vx_config.cli import build_parser, main
 
 
+def test_rfid_client_is_owned_by_uhfreader18() -> None:
+    from uhfreader18 import RfidClient
+
+    import hw_vx_config
+
+    assert not hasattr(hw_vx_config, "RfidClient")
+    assert RfidClient.__module__ == "uhfreader18.client"
+
+
 class TestBuildParser:
     def test_subcommands_exist(self) -> None:
         parser = build_parser()
@@ -60,7 +69,7 @@ class TestVersionFlag:
         main(["--version"])
         captured = capsys.readouterr()
         assert "hw-vx-config" in captured.out
-        assert "1.1.0" in captured.out
+        assert "2.0.0" in captured.out
 
 
 class TestSearchCommand:
