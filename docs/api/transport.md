@@ -84,7 +84,7 @@ Send `command|check` and expect `A{value}|{check}` back. Returns just the
 | Parameter | Type | Description |
 |---|---|---|
 | `command` | `str` | Command prefix (e.g. `"GON"`) |
-| `check` | `str` | Sequence token for reply validation (e.g. `"1"`) |
+| `check` | `str` | Sequence token for reply validation, zero-padded 2-digit uppercase hex (e.g. `"01"`, `"0A"`, `"25"`) |
 
 **Raises:** `ValueError` if the reply doesn't contain the expected check token.
 

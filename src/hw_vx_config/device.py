@@ -62,28 +62,28 @@ class HwVxDevice:
         """Read all settings from the device (C# ``configButton_Click``)."""
         cfg = DeviceConfig()
         r = self.net.request_single
-        cfg.username = r("GON", "1")
-        cfg.device_name = r("GDN", "2")
-        cfg.mac_address = r("GFE", "3")
-        cfg.ip_address = r("GIP", "4")
-        cfg.port_number = r("GPN", "5")
-        cfg.protocol = r("GTP", "6")
-        cfg.work_mode = r("GRM", "7")
-        cfg.connection_mode = r("GCM", "8")
-        cfg.connection_timeout = r("GCT", "9")
-        cfg.rts = r("GFC", "10")
-        cfg.dtr_mode = r("GDT", "11")
-        cfg.baud_rate = r("GBR", "12")
-        cfg.parity = r("GPR", "13")
-        cfg.data_bits = r("GBB", "14")
-        cfg.reconnect = r("GRC", "15")
-        cfg.max_length = r("GML", "16")
-        cfg.max_delay = r("GMD", "17")
-        cfg.remote_ip = r("GDI", "18")
-        cfg.remote_port = r("GDP", "19")
-        cfg.gateway_ip = r("GGI", "20")
-        cfg.subnet_mask = r("GNM", "21")
-        cfg.dhcp = r("GDH", "22")
+        cfg.username = r("GON", "01")
+        cfg.device_name = r("GDN", "02")
+        cfg.mac_address = r("GFE", "03")
+        cfg.ip_address = r("GIP", "04")
+        cfg.port_number = r("GPN", "05")
+        cfg.protocol = r("GTP", "06")
+        cfg.work_mode = r("GRM", "07")
+        cfg.connection_mode = r("GCM", "08")
+        cfg.connection_timeout = r("GCT", "09")
+        cfg.rts = r("GFC", "0A")
+        cfg.dtr_mode = r("GDT", "0B")
+        cfg.baud_rate = r("GBR", "0C")
+        cfg.parity = r("GPR", "0D")
+        cfg.data_bits = r("GBB", "0E")
+        cfg.reconnect = r("GRC", "0F")
+        cfg.max_length = r("GML", "10")
+        cfg.max_delay = r("GMD", "11")
+        cfg.remote_ip = r("GDI", "12")
+        cfg.remote_port = r("GDP", "13")
+        cfg.gateway_ip = r("GGI", "14")
+        cfg.subnet_mask = r("GNM", "15")
+        cfg.dhcp = r("GDH", "16")
         return cfg
 
     # ── write configuration ──────────────────────────────────────────
@@ -122,26 +122,26 @@ class HwVxDevice:
             time.sleep(0.05)
 
         commands = [
-            f"SON{cfg.username}|18",
-            f"SDN{cfg.device_name}|19",
-            f"STP{cfg.protocol}|20",
-            f"SPN{cfg.port_number}|21",
-            f"SRM{cfg.work_mode}|22",
-            f"SFC{cfg.rts}|23",
-            f"SDT{cfg.dtr_mode}|24",
-            f"SBR{cfg.baud_rate}|25",
-            f"SPR{cfg.parity}|26",
-            f"SBB{cfg.data_bits}|27",
-            f"SRC{cfg.reconnect}|28",
-            f"SCM{cfg.connection_mode}|29",
-            f"SCT{cfg.connection_timeout}|30",
-            f"SML{cfg.max_length}|31",
-            f"SMD{cfg.max_delay}|32",
-            f"SDI{cfg.remote_ip}|33",
-            f"SDP{cfg.remote_port}|34",
-            f"SGI{cfg.gateway_ip}|35",
-            f"SNM{cfg.subnet_mask}|36",
-            f"SIP{cfg.ip_address}|37",
+            f"SON{cfg.username}|12",
+            f"SDN{cfg.device_name}|13",
+            f"STP{cfg.protocol}|14",
+            f"SPN{cfg.port_number}|15",
+            f"SRM{cfg.work_mode}|16",
+            f"SFC{cfg.rts}|17",
+            f"SDT{cfg.dtr_mode}|18",
+            f"SBR{cfg.baud_rate}|19",
+            f"SPR{cfg.parity}|1A",
+            f"SBB{cfg.data_bits}|1B",
+            f"SRC{cfg.reconnect}|1C",
+            f"SCM{cfg.connection_mode}|1D",
+            f"SCT{cfg.connection_timeout}|1E",
+            f"SML{cfg.max_length}|1F",
+            f"SMD{cfg.max_delay}|20",
+            f"SDI{cfg.remote_ip}|21",
+            f"SDP{cfg.remote_port}|22",
+            f"SGI{cfg.gateway_ip}|23",
+            f"SNM{cfg.subnet_mask}|24",
+            f"SIP{cfg.ip_address}|25",
         ]
         for cmd in commands:
             send(cmd)
@@ -162,11 +162,11 @@ class HwVxDevice:
         s("L")
         time.sleep(0.05)
         self.net.receive()  # drain reply
-        s(f"SGI{gateway_ip}|35")
+        s(f"SGI{gateway_ip}|23")
         time.sleep(0.1)
-        s(f"SNM{subnet_mask}|36")
+        s(f"SNM{subnet_mask}|24")
         time.sleep(0.1)
-        s(f"SIP{new_ip}|37")
+        s(f"SIP{new_ip}|25")
         time.sleep(0.1)
         self.net.receive()
         s("E")
@@ -181,11 +181,11 @@ class HwVxDevice:
             time.sleep(0.1)
             broadcast.send("L")
             time.sleep(0.05)
-            broadcast.send(f"SGI{gateway_ip}|35")
+            broadcast.send(f"SGI{gateway_ip}|23")
             time.sleep(0.1)
-            broadcast.send(f"SNM{subnet_mask}|36")
+            broadcast.send(f"SNM{subnet_mask}|24")
             time.sleep(0.1)
-            broadcast.send(f"SIP{new_ip}|37")
+            broadcast.send(f"SIP{new_ip}|25")
             time.sleep(0.1)
             broadcast.receive()
             broadcast.send("E")
@@ -195,7 +195,7 @@ class HwVxDevice:
         val = "1" if enabled else "0"
         self.net.send("L")
         time.sleep(0.05)
-        self.net.send(f"SDH{val}|40")
+        self.net.send(f"SDH{val}|28")
         time.sleep(0.1)
         self.net.send("E")
 

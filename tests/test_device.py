@@ -80,28 +80,28 @@ class TestGetConfig:
     def test_reads_all_settings(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
         # Map each check token to a value
         values = {
-            "1": "admin",
-            "2": "MyDevice",
-            "3": "AA:BB",
-            "4": "192.168.1.100",
-            "5": "4196",
-            "6": "0",
-            "7": "0",
-            "8": "0",
-            "9": "60",
-            "10": "0",
+            "01": "admin",
+            "02": "MyDevice",
+            "03": "AA:BB",
+            "04": "192.168.1.100",
+            "05": "4196",
+            "06": "0",
+            "07": "0",
+            "08": "0",
+            "09": "60",
+            "0A": "0",
+            "0B": "0",
+            "0C": "3",
+            "0D": "0",
+            "0E": "1",
+            "0F": "0",
+            "10": "1024",
             "11": "0",
-            "12": "3",
-            "13": "0",
-            "14": "1",
-            "15": "0",
-            "16": "1024",
-            "17": "0",
-            "18": "192.168.1.1",
-            "19": "5000",
-            "20": "192.168.1.1",
-            "21": "255.255.255.0",
-            "22": "0",
+            "12": "192.168.1.1",
+            "13": "5000",
+            "14": "192.168.1.1",
+            "15": "255.255.255.0",
+            "16": "0",
         }
 
         def fake_request_single(cmd: str, check: str) -> str:
@@ -196,15 +196,15 @@ class TestChangeNetwork:
 
     def test_sends_ip_command(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
         cmds, _ = self._run(device, mock_transport)
-        assert "SIP10.0.0.50|37" in cmds
+        assert "SIP10.0.0.50|25" in cmds
 
     def test_sends_subnet_mask_command(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
         cmds, _ = self._run(device, mock_transport)
-        assert "SNM255.255.0.0|36" in cmds
+        assert "SNM255.255.0.0|24" in cmds
 
     def test_sends_gateway_command(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
         cmds, _ = self._run(device, mock_transport)
-        assert "SGI10.0.0.1|35" in cmds
+        assert "SGI10.0.0.1|23" in cmds
 
     def test_sends_reboot(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
         cmds, _ = self._run(device, mock_transport)
@@ -213,9 +213,9 @@ class TestChangeNetwork:
     def test_gateway_sent_before_ip(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
         """Order must be: SGI → SNM → SIP so IP change happens last."""
         cmds, _ = self._run(device, mock_transport)
-        gw_idx = cmds.index("SGI10.0.0.1|35")
-        nm_idx = cmds.index("SNM255.255.0.0|36")
-        ip_idx = cmds.index("SIP10.0.0.50|37")
+        gw_idx = cmds.index("SGI10.0.0.1|23")
+        nm_idx = cmds.index("SNM255.255.0.0|24")
+        ip_idx = cmds.index("SIP10.0.0.50|25")
         assert gw_idx < nm_idx < ip_idx
 
     def test_broadcast_fallback_sends_all_three(
@@ -223,22 +223,22 @@ class TestChangeNetwork:
     ) -> None:
         _, bcast = self._run(device, mock_transport)
         bcast_cmds = [c[0][0] for c in bcast.send.call_args_list]
-        assert "SGI10.0.0.1|35" in bcast_cmds
-        assert "SNM255.255.0.0|36" in bcast_cmds
-        assert "SIP10.0.0.50|37" in bcast_cmds
+        assert "SGI10.0.0.1|23" in bcast_cmds
+        assert "SNM255.255.0.0|24" in bcast_cmds
+        assert "SIP10.0.0.50|25" in bcast_cmds
 
 
 class TestSetDhcp:
     def test_enable_dhcp(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
         device.set_dhcp(True)
         cmds = [c[0][0] for c in mock_transport.send.call_args_list]
-        assert "SDH1|40" in cmds
+        assert "SDH1|28" in cmds
         assert "E" in cmds
 
     def test_disable_dhcp(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
         device.set_dhcp(False)
         cmds = [c[0][0] for c in mock_transport.send.call_args_list]
-        assert "SDH0|40" in cmds
+        assert "SDH0|28" in cmds
 
 
 class TestReboot:
