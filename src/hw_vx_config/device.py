@@ -7,6 +7,7 @@ then get / set configuration.
 
 from __future__ import annotations
 
+import ipaddress
 import time
 from collections.abc import Callable
 from types import TracebackType
@@ -94,7 +95,13 @@ class HwVxDevice:
 
         Sends commands via unicast first, then retries via broadcast
         with ``W{mac}`` in case the IP changed mid-save.
+
+        Raises
+        ------
+        ValueError
+            If *cfg* fails validation; nothing is sent in that case.
         """
+        cfg.validate()  # reject bad config before it reaches the device
         delay = 0.01  # 10 ms between commands, matching C#
 
         self._send_config_pass(self.net.send, cfg, delay, login=True)
@@ -154,6 +161,15 @@ class HwVxDevice:
 
     def change_network(self, new_ip: str, subnet_mask: str, gateway_ip: str) -> None:
         """Change IP, subnet mask, and gateway, then reboot."""
+        for name, value in (
+            ("new_ip", new_ip),
+            ("subnet_mask", subnet_mask),
+            ("gateway_ip", gateway_ip),
+        ):
+            try:
+                ipaddress.IPv4Address(value)
+            except (ipaddress.AddressValueError, ValueError):
+                raise ValueError(f"{name}: {value!r} is not a valid IPv4 address") from None
         s = self.net.send
 
         # Unicast

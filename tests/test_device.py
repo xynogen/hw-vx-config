@@ -194,6 +194,13 @@ class TestChangeNetwork:
         networking.assert_called_once_with("255.255.255.255")
         assert mock_transport.send.call_count == 6
 
+    def test_rejects_bad_ip_before_send(
+        self, device: HwVxDevice, mock_transport: MagicMock
+    ) -> None:
+        with pytest.raises(ValueError, match="valid IPv4"):
+            device.change_network("999.1.1.1", "255.255.0.0", "10.0.0.1")
+        mock_transport.send.assert_not_called()
+
     def test_sends_ip_command(self, device: HwVxDevice, mock_transport: MagicMock) -> None:
         cmds, _ = self._run(device, mock_transport)
         assert "SIP10.0.0.50|25" in cmds

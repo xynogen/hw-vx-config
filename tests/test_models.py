@@ -1,6 +1,8 @@
 """Tests for hw_vx_config.models."""
 
-from dataclasses import fields
+from dataclasses import fields, replace
+
+import pytest
 
 from hw_vx_config.models import DeviceConfig, SearchResult
 
@@ -47,3 +49,61 @@ class TestDeviceConfig:
         assert sample_config.ip_address == "192.168.1.100"
         assert sample_config.baud_rate == "3"
         assert sample_config.subnet_mask == "255.255.255.0"
+
+
+class TestDeviceConfigValidate:
+    """Tests for DeviceConfig.validate() — the pre-send trust boundary."""
+
+    def test_valid_config_passes(self, sample_config: DeviceConfig) -> None:
+        sample_config.validate()  # must not raise
+
+    @pytest.mark.parametrize(
+        ("field", "bad", "needle"),
+        [
+            ("ip_address", "999.1.1.1", "valid IPv4"),
+            ("subnet_mask", "not-an-ip", "valid IPv4"),
+            ("gateway_ip", "1.2.3", "valid IPv4"),
+            ("remote_ip", "", "valid IPv4"),
+            ("port_number", "0", "1-65535"),
+            ("port_number", "70000", "1-65535"),
+            ("remote_port", "abc", "1-65535"),
+            ("protocol", "2", "not in"),
+            ("work_mode", "5", "not in"),
+            ("dhcp", "9", "not in"),
+            ("baud_rate", "8", "not in"),
+            ("parity", "5", "not in"),
+            ("data_bits", "2", "not in"),
+            ("dtr_mode", "3", "not in"),
+            ("rts", "3", "not in"),
+            ("connection_mode", "3", "not in"),
+            ("connection_timeout", "-1", "non-negative"),
+            ("reconnect", "x", "non-negative"),
+            ("max_length", "1.5", "non-negative"),
+            ("max_delay", "²", "non-negative"),  # unicode digit: isdigit() True, int() fails
+        ],
+    )
+    def test_bad_field_rejected(
+        self, sample_config: DeviceConfig, field: str, bad: str, needle: str
+    ) -> None:
+        cfg = replace(sample_config, **{field: bad})
+        with pytest.raises(ValueError, match=needle):
+            cfg.validate()
+
+    def test_pipe_rejected(self, sample_config: DeviceConfig) -> None:
+        cfg = replace(sample_config, username="a|b")
+        with pytest.raises(ValueError, match="must not contain"):
+            cfg.validate()
+
+    def test_non_ascii_rejected(self, sample_config: DeviceConfig) -> None:
+        cfg = replace(sample_config, device_name="café")
+        with pytest.raises(ValueError, match="must be ASCII"):
+            cfg.validate()
+
+    def test_reports_all_errors_at_once(self, sample_config: DeviceConfig) -> None:
+        cfg = replace(sample_config, ip_address="bad", port_number="0", baud_rate="9")
+        with pytest.raises(ValueError) as exc:
+            cfg.validate()
+        msg = str(exc.value)
+        assert "ip_address" in msg
+        assert "port_number" in msg
+        assert "baud_rate" in msg
