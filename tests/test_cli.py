@@ -69,7 +69,7 @@ class TestVersionFlag:
         main(["--version"])
         captured = capsys.readouterr()
         assert "hw-vx-config" in captured.out
-        assert "2.1.0" in captured.out
+        assert "2.1.1" in captured.out
 
 
 class TestSearchCommand:
