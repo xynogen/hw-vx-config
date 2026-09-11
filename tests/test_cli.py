@@ -96,8 +96,10 @@ class TestVersionFlag:
     def test_version_output(self, capsys: pytest.CaptureFixture[str]) -> None:
         main(["--version"])
         captured = capsys.readouterr()
+        from hw_vx_config import __version__
+
         assert "hw-vx-config" in captured.out
-        assert "2.1.1" in captured.out
+        assert __version__ in captured.out
 
 
 class TestSearchCommand:

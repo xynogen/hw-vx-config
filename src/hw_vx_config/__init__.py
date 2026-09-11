@@ -7,7 +7,7 @@ Protocol: UDP packets to port 65535 (HW-VX IP Protocol).
 No DLLs needed — pure Python sockets.
 """
 
-__version__ = "2.1.1"
+__version__ = "3.0.0"
 
 from uhfreader18.hwvx import DeviceConfig, HwVxDevice, HwVxNetworking, SearchResult
 
