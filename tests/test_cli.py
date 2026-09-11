@@ -77,6 +77,20 @@ class TestBuildParser:
         with pytest.raises(SystemExit):
             parser.parse_args(["set-reader-power", "192.168.1.1", "6000"])  # missing power
 
+    def test_set_reader_scantime_args(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["set-reader-scantime", "192.168.1.1", "6000", "20"])
+        assert args.command == "set-reader-scantime"
+        assert args.ip == "192.168.1.1"
+        assert args.port == 6000
+        assert args.scan_time == 20
+        assert args.adr == 0
+
+    def test_set_reader_scantime_requires_value(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["set-reader-scantime", "192.168.1.1", "6000"])  # missing scan_time
+
 
 class TestVersionFlag:
     def test_version_output(self, capsys: pytest.CaptureFixture[str]) -> None:

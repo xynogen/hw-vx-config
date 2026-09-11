@@ -53,7 +53,7 @@ def _menu(state: SessionState) -> Box:
     if state.config is not None:
         box.div().hdr("RFID READER (TCP)").div().item("9. RFID reader info").item(
             "10. Set RFID reader address"
-        ).item("11. Set RFID reader power")
+        ).item("11. Set RFID reader power").item("12. Set RFID reader scan time")
     return box.div().item("q. Quit   l. List available options")
 
 
@@ -665,6 +665,53 @@ def _cmd_set_rfid_power(state: SessionState) -> None:
         ui.err(f"RFID error: {exc}")
 
 
+def _cmd_set_rfid_scantime(state: SessionState) -> None:
+    """12. Set RFID reader inventory scan time."""
+    if not _require_config(state):
+        return
+    assert state.config is not None
+    assert state.ip is not None
+    try:
+        tcp_port = int(state.config.port_number)
+        with RfidClient(state.ip, tcp_port) as client:
+            info, current_adr = client.discover_address()
+        state.reader_adr = current_adr
+        current_st = f"{info.scan_time * 100} ms ({info.scan_time} x100ms)"
+        ui.info(f"Current reader scan time: {current_st}")
+
+        st_str = input("  New scan time, unit x100ms (3-255): ").strip()
+        if not st_str:
+            ui.info("Cancelled.")
+            return
+
+        try:
+            scan_time = int(st_str)
+        except ValueError:
+            ui.warn("Scan time must be a number.")
+            return
+        # Manual minimum is 3 (300 ms); below that the reader may miss tags.
+        if not (3 <= scan_time <= 255):
+            ui.warn("Scan time must be 3-255 (x100ms).")
+            return
+
+        ui.kv("Current scan time", current_st)
+        ui.kv("New scan time", f"{scan_time * 100} ms ({scan_time} x100ms)")
+        if ui.confirm("Apply?"):
+            with RfidClient(state.ip, tcp_port) as client:
+                client.set_scan_time(current_adr, scan_time)
+            ui.ok(f"Reader scan time set to {scan_time * 100} ms ({scan_time} x100ms)")
+        else:
+            ui.info("Cancelled.")
+    except TimeoutError:
+        ui.err("RFID reader not responding to broadcast — check power and serial wiring.")
+    except ConnectionError as exc:
+        ui.err(f"Connection failed: {exc}")
+    except ValueError as exc:
+        ui.err(f"Bad response: {exc}")
+    except RuntimeError as exc:
+        ui.err(f"RFID error: {exc}")
+
+
 # ─── Command dispatch table ──────────────────────────────────────────
 
 COMMANDS: dict[str, Callable[[SessionState], None]] = {
@@ -679,6 +726,7 @@ COMMANDS: dict[str, Callable[[SessionState], None]] = {
     "9": _cmd_rfid_info,
     "10": _cmd_set_rfid_addr,
     "11": _cmd_set_rfid_power,
+    "12": _cmd_set_rfid_scantime,
 }
 
 
@@ -778,6 +826,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_sp.add_argument("port", type=int, help="TCP port (from device network config)")
     p_sp.add_argument("power", type=int, help="Transmit power in dBm (0-30)")
     p_sp.add_argument("--adr", type=int, default=0, help="Reader address (default: 0)")
+
+    p_st = sub.add_parser("set-reader-scantime", help="Set RFID reader scan time (via TCP)")
+    p_st.add_argument("ip", help="Reader IP address")
+    p_st.add_argument("port", type=int, help="TCP port (from device network config)")
+    p_st.add_argument("scan_time", type=int, help="Inventory scan time, unit x100ms (3-255)")
+    p_st.add_argument("--adr", type=int, default=0, help="Reader address (default: 0)")
 
     return parser
 
@@ -893,6 +947,21 @@ def main(argv: list[str] | None = None) -> None:
             with RfidClient(args.ip, args.port) as client:
                 client.set_power(args.adr, args.power)
             print(f"Reader power set to {args.power} dBm (adr {args.adr}).")
+        except TimeoutError:
+            ui.err("RFID reader not responding to broadcast \u2014 check power and serial wiring.")
+        except ConnectionError as exc:
+            ui.err(f"Connection failed: {exc}")
+        except (ValueError, RuntimeError) as exc:
+            ui.err(f"RFID error: {exc}")
+
+    elif args.command == "set-reader-scantime":
+        try:
+            with RfidClient(args.ip, args.port) as client:
+                client.set_scan_time(args.adr, args.scan_time)
+            print(
+                f"Reader scan time set to {args.scan_time * 100} ms "
+                f"({args.scan_time} x100ms, adr {args.adr})."
+            )
         except TimeoutError:
             ui.err("RFID reader not responding to broadcast \u2014 check power and serial wiring.")
         except ConnectionError as exc:
