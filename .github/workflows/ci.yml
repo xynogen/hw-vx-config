@@ -23,8 +23,14 @@ jobs:
         with:
           cache: true
 
+      - name: Install
+        run: mise run install
+
       - name: Lint & format
-        run: mise run lint
+        run: mise run format check
+
+      - name: Typecheck
+        run: mise run typecheck
 
       - name: Test on Python 3.10 - 3.13
-        run: mise run test-all
+        run: mise run test matrix
