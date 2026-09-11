@@ -1,2 +1,2 @@
 # Runtime dependency for UHFReader18 command operations
-uhfreader18>=0.1,<0.2
+uhfreader18>=0.2,<0.3
