@@ -45,7 +45,9 @@ with HwVxDevice("10.10.23.241") as dev:
 
 with HwVxDevice("10.10.23.241") as dev:
     dev.connect()
-    dev.change_ip("10.10.23.100")  # change IP and reboot
+    dev.change_network(
+        "10.10.23.100", "255.255.255.0", "10.10.23.1"
+    )  # change IP/mask/gateway and reboot
 
 with HwVxDevice("10.10.23.100") as dev:
     dev.connect()

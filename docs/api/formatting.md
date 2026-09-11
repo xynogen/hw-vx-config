@@ -41,7 +41,8 @@ def format_config(cfg: DeviceConfig) -> str
 ```
 
 Return a pretty box-drawing string representation of a
-[`DeviceConfig`](models.md#deviceconfig). Contains three sections:
+[`DeviceConfig`](https://github.com/xynogen/uhfreader18/blob/main/docs/HWVX.md#deviceconfig).
+Contains three sections:
 Network Settings, Serial Settings, and Advanced Settings.
 
 **Returns:** Multi-line string with Unicode box-drawing characters.

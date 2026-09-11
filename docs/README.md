@@ -1,65 +1,34 @@
 # Documentation
 
-## API Reference
+`hw-vx-config` is a thin CLI over the `uhfreader18.hwvx` sub-package. All
+HW-VX protocol code (transport, device flows, config models, setting codes,
+enums) lives in the library; this package only adds the command-line
+interface and its display formatting.
 
-Detailed reference for every module in the `hw_vx_config` package.
+## API Reference
 
 | Module | Description |
 |---|---|
-| [`constants`](api/constants.md) | Protocol constants, setting codes, and option look-up tables |
-| [`models`](api/models.md) | `SearchResult` and `DeviceConfig` dataclasses |
-| [`transport`](api/transport.md) | Low-level UDP socket transport (`HwVxNetworking`) |
-| [`device`](api/device.md) | High-level device operations (`HwVxDevice`) |
-| [`formatting`](api/formatting.md) | Pretty-print helpers for configuration output |
 | [`cli`](api/cli.md) | Command-line interface — interactive menu & sub-commands |
-| [`protocol`](api/protocol.md) | TCP port 2077 RFID binary protocol — frame layout, CRC, keepalive |
+| [`formatting`](api/formatting.md) | Pretty-print helpers for configuration output |
+
+The HW-VX protocol API (`HwVxDevice`, `HwVxNetworking`, `DeviceConfig`,
+`SearchResult`, setting codes, enums) is documented in the library:
+[uhfreader18 `docs/HWVX.md`](https://github.com/xynogen/uhfreader18/blob/main/docs/HWVX.md).
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────┐
-│                    cli.py                        │  ← user-facing (argparse + interactive menu)
-│                                                  │
+│               hw_vx_config.cli                   │  ← argparse + interactive menu
+│               hw_vx_config.formatting            │  ← display helpers
 ├──────────────────────────────────────────────────┤
-│                  device.py                       │  ← high-level API
-│     (connect, get_config, save_config, …)        │
-├──────────────────────────────────────────────────┤
-│                transport.py                      │  ← low-level UDP
-│   (send, receive, request, request_single,       │
-│    search)                                       │
-├──────────────────────────────────────────────────┤
-│          constants.py  │  models.py              │  ← shared data
-│  (codes, option maps)  │  (dataclasses)          │
+│               uhfreader18.hwvx                   │  ← all HW-VX protocol
+│  HwVxDevice · HwVxNetworking · DeviceConfig ·    │
+│  SearchResult · SETTINGS · enums                 │
 └──────────────────────────────────────────────────┘
 ```
 
-## Protocol Overview
-
-All communication uses **UDP on port 65535**. Commands are ASCII strings.
-
-### Command Flow
-
-```
-Client                          Device
-  │                               │
-  │──── X (broadcast) ───────────>│  Search / Echo
-  │<─── A{mac}/{port}/… ─────────│  Reply
-  │                               │
-  │──── W{mac} ──────────────────>│  Select
-  │<─── A… ──────────────────────│
-  │                               │
-  │──── L ───────────────────────>│  Login
-  │<─── A… ──────────────────────│
-  │                               │
-  │──── G{code}|{seq} ───────────>│  Get setting
-  │<─── A{value}|{seq} ──────────│
-  │                               │
-  │──── S{code}{value}|{seq} ────>│  Set setting
-  │<─── A… ──────────────────────│
-  │                               │
-  │──── E ───────────────────────>│  Reboot
-  │                               │
-```
-
-All replies are prefixed with `A`. The `|{seq}` suffix is a sequence
-token used by `request_single` to match replies to requests.
+The HW-VX UDP setting protocol (command flow, frame layout, enums) is
+documented in the library — see
+[uhfreader18 `docs/HWVX.md`](https://github.com/xynogen/uhfreader18/blob/main/docs/HWVX.md).

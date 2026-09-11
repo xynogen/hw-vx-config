@@ -106,7 +106,8 @@ def search_readers() -> list[SearchResult]
 ```
 
 Broadcast search and print results table. Returns the list of
-[`SearchResult`](models.md#searchresult) objects found.
+[`SearchResult`](https://github.com/xynogen/uhfreader18/blob/main/docs/HWVX.md#searchresult)
+objects found.
 
 ### `select_reader`
 

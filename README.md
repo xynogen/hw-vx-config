@@ -149,8 +149,8 @@ flowchart LR
 
 | Package | Responsibility |
 |:---|:---|
-| `hw-vx-config` | HW-VX discovery, network/serial configuration, DHCP, reboot |
-| `uhfreader18` | RFID command/response, CRC validation, tag push and heartbeat streams |
+| `hw-vx-config` | CLI front-end — discovery, network/serial configuration, DHCP, reboot |
+| `uhfreader18` | RFID command/response, CRC validation, tag push/heartbeat streams, and the `uhfreader18.hwvx` HW-VX configuration protocol |
 
 ## Discovery Modes
 
@@ -201,10 +201,9 @@ CI runs lint, formatting, and tests on Python 3.10–3.13. Version tags such as
 
 ## Protocol and Documentation
 
-- [`docs/api/`](docs/api/): per-module API reference
-- [`docs/api/protocol.md`](docs/api/protocol.md): HW-VX and RFID protocol notes
-- [`docs/DOCUMENTATION.md`](docs/DOCUMENTATION.md): UHFReader18 manual-derived reference
-- [`uhfreader18`](https://github.com/xynogen/uhfreader18): maintained RFID protocol library
+- [`docs/api/`](docs/api/): CLI and formatting API reference
+- [uhfreader18 `docs/HWVX.md`](https://github.com/xynogen/uhfreader18/blob/main/docs/HWVX.md): HW-VX UDP configuration protocol and the `uhfreader18.hwvx` API this CLI wraps
+- [`uhfreader18`](https://github.com/xynogen/uhfreader18): the underlying protocol library
 
 ## Uninstall
 
