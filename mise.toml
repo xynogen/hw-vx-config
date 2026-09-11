@@ -1,0 +1,38 @@
+[tools]
+python = "3.13"
+uv = "latest"
+ruff = "latest"
+
+[env]
+# uv-managed venv at .venv, auto-activated by mise
+_.python.venv = { path = ".venv", create = true }
+
+[tasks.install]
+description = "Sync dev environment"
+run = "uv pip install -e '.[dev,typing,cov]'"
+
+[tasks.lint]
+description = "Lint + format check"
+run = ["ruff check src/ tests/", "ruff format --check src/ tests/"]
+
+[tasks.fmt]
+description = "Format code"
+run = "ruff format src/ tests/"
+
+[tasks.typecheck]
+description = "Type check"
+run = "mypy src/"
+
+[tasks.test]
+description = "Run tests"
+run = "pytest tests/ -q"
+
+[tasks.test-all]
+description = "Run tests on Python 3.10-3.13"
+run = '''
+for ver in 3.10 3.11 3.12 3.13; do
+  echo "::group::Python $ver"
+  uv run --extra dev --python "$ver" -- pytest tests/ -q
+  echo "::endgroup::"
+done
+'''

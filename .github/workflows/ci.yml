@@ -19,19 +19,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
         with:
-          enable-cache: true
+          cache: true
 
       - name: Lint & format
-        run: |
-          uv run --with ruff -- ruff check src/ tests/
-          uv run --with ruff -- ruff format --check src/ tests/
+        run: mise run lint
 
       - name: Test on Python 3.10 - 3.13
-        run: |
-          for ver in 3.10 3.11 3.12 3.13; do
-            echo "::group::Python $ver"
-            uv run --extra dev --python "$ver" -- pytest tests/ -q
-            echo "::endgroup::"
-          done
+        run: mise run test-all
