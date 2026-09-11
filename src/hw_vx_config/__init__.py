@@ -9,9 +9,7 @@ No DLLs needed — pure Python sockets.
 
 __version__ = "2.1.1"
 
-from hw_vx_config.device import HwVxDevice
-from hw_vx_config.models import DeviceConfig, SearchResult
-from hw_vx_config.transport import HwVxNetworking
+from uhfreader18.hwvx import DeviceConfig, HwVxDevice, HwVxNetworking, SearchResult
 
 __all__ = [
     "DeviceConfig",

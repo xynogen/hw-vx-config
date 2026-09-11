@@ -6,6 +6,7 @@ from collections.abc import Callable
 from unittest.mock import MagicMock, patch
 
 import pytest
+from uhfreader18.hwvx import DeviceConfig, SearchResult
 
 from hw_vx_config.cli import (
     COMMANDS,
@@ -24,7 +25,6 @@ from hw_vx_config.cli import (
     interactive_menu,
     search_readers,
 )
-from hw_vx_config.models import DeviceConfig, SearchResult
 
 # ─── SessionState ────────────────────────────────────────────────────
 

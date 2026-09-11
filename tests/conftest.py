@@ -1,10 +1,9 @@
-"""Shared fixtures for the test suite."""
+"""Shared fixtures for the CLI test suite."""
 
 from __future__ import annotations
 
 import pytest
-
-from hw_vx_config.models import DeviceConfig, SearchResult
+from uhfreader18.hwvx import DeviceConfig, SearchResult
 
 
 @pytest.fixture()

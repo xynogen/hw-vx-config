@@ -1,5 +1,7 @@
 """Tests for hw_vx_config.formatting."""
 
+from uhfreader18.hwvx import DeviceConfig
+
 from hw_vx_config.formatting import (
     Box,
     fmt_mac,
@@ -8,7 +10,6 @@ from hw_vx_config.formatting import (
     fmt_reader_type,
     format_config,
 )
-from hw_vx_config.models import DeviceConfig
 
 
 class TestFmtMac:

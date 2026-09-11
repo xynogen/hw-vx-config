@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from uhfreader18 import RfidClient
+from uhfreader18.hwvx import DeviceConfig, HwVxDevice, HwVxNetworking, SearchResult
 
 from hw_vx_config import ui
 from hw_vx_config.constants import (
@@ -20,7 +21,6 @@ from hw_vx_config.constants import (
     TOGGLE_OPTIONS,
     WORK_MODE_OPTIONS,
 )
-from hw_vx_config.device import HwVxDevice
 from hw_vx_config.formatting import (
     Box,
     fmt_mac,
@@ -29,8 +29,6 @@ from hw_vx_config.formatting import (
     fmt_reader_type,
     print_config,
 )
-from hw_vx_config.models import DeviceConfig, SearchResult
-from hw_vx_config.transport import HwVxNetworking
 
 # ─── Banner ──────────────────────────────────────────────────────────
 

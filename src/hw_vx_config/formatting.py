@@ -3,6 +3,7 @@ Pretty-printing helpers for device configuration.
 """
 
 from uhfreader18 import Protocol, ReaderType
+from uhfreader18.hwvx import DeviceConfig
 
 from hw_vx_config.constants import (
     BAUD_RATE_OPTIONS,
@@ -13,7 +14,6 @@ from hw_vx_config.constants import (
     TOGGLE_OPTIONS,
     WORK_MODE_OPTIONS,
 )
-from hw_vx_config.models import DeviceConfig
 
 
 def fmt_mac(raw: str) -> str:
