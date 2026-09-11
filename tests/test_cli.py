@@ -63,6 +63,20 @@ class TestBuildParser:
         args = parser.parse_args(["reboot", "192.168.1.1"])
         assert args.ip == "192.168.1.1"
 
+    def test_set_reader_power_args(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["set-reader-power", "192.168.1.1", "6000", "20"])
+        assert args.command == "set-reader-power"
+        assert args.ip == "192.168.1.1"
+        assert args.port == 6000
+        assert args.power == 20
+        assert args.adr == 0
+
+    def test_set_reader_power_requires_power(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["set-reader-power", "192.168.1.1", "6000"])  # missing power
+
 
 class TestVersionFlag:
     def test_version_output(self, capsys: pytest.CaptureFixture[str]) -> None:

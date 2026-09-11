@@ -51,7 +51,9 @@ def _menu(state: SessionState) -> Box:
             "8. Reboot reader"
         )
     if state.config is not None:
-        box.div().item("9. RFID reader info").item("10. Set RFID reader address")
+        box.div().item("9. RFID reader info").item("10. Set RFID reader address").item(
+            "11. Set RFID reader power"
+        )
     return box.div().item("q. Quit   l. List available options")
 
 
@@ -617,6 +619,52 @@ def _cmd_set_rfid_addr(state: SessionState) -> None:
         ui.err(f"RFID error: {exc}")
 
 
+def _cmd_set_rfid_power(state: SessionState) -> None:
+    """11. Set RFID reader transmit power."""
+    if not _require_config(state):
+        return
+    assert state.config is not None
+    assert state.ip is not None
+    try:
+        tcp_port = int(state.config.port_number)
+        with RfidClient(state.ip, tcp_port) as client:
+            info, current_adr = client.discover_address()
+        state.reader_adr = current_adr
+        current_power = "Unknown" if info.power == 0xFF else f"{info.power} dBm"
+        ui.info(f"Current reader power: {current_power}")
+
+        power_str = input("  New power (0-30 dBm): ").strip()
+        if not power_str:
+            ui.info("Cancelled.")
+            return
+
+        try:
+            power = int(power_str)
+        except ValueError:
+            ui.warn("Power must be a number.")
+            return
+        if not (0 <= power <= 30):
+            ui.warn("Power must be 0-30 dBm.")
+            return
+
+        ui.kv("Current power", current_power)
+        ui.kv("New power", f"{power} dBm")
+        if ui.confirm("Apply?"):
+            with RfidClient(state.ip, tcp_port) as client:
+                client.set_power(current_adr, power)
+            ui.ok(f"Reader power set to {power} dBm")
+        else:
+            ui.info("Cancelled.")
+    except TimeoutError:
+        ui.err("RFID reader not responding to broadcast — check power and serial wiring.")
+    except ConnectionError as exc:
+        ui.err(f"Connection failed: {exc}")
+    except ValueError as exc:
+        ui.err(f"Bad response: {exc}")
+    except RuntimeError as exc:
+        ui.err(f"RFID error: {exc}")
+
+
 # ─── Command dispatch table ──────────────────────────────────────────
 
 COMMANDS: dict[str, Callable[[SessionState], None]] = {
@@ -630,6 +678,7 @@ COMMANDS: dict[str, Callable[[SessionState], None]] = {
     "8": _cmd_reboot,
     "9": _cmd_rfid_info,
     "10": _cmd_set_rfid_addr,
+    "11": _cmd_set_rfid_power,
 }
 
 
@@ -723,6 +772,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_sa.add_argument("port", type=int, help="TCP port (from device network config)")
     p_sa.add_argument("new_addr", type=int, help="New reader address (0-254)")
     p_sa.add_argument("--adr", type=int, default=0, help="Current reader address (default: 0)")
+
+    p_sp = sub.add_parser("set-reader-power", help="Set RFID reader transmit power (via TCP)")
+    p_sp.add_argument("ip", help="Reader IP address")
+    p_sp.add_argument("port", type=int, help="TCP port (from device network config)")
+    p_sp.add_argument("power", type=int, help="Transmit power in dBm (0-30)")
+    p_sp.add_argument("--adr", type=int, default=0, help="Reader address (default: 0)")
 
     return parser
 
@@ -832,3 +887,15 @@ def main(argv: list[str] | None = None) -> None:
             ui.err("RFID reader not responding to broadcast \u2014 check power and serial wiring.")
         except ConnectionError as exc:
             ui.err(f"Connection failed: {exc}")
+
+    elif args.command == "set-reader-power":
+        try:
+            with RfidClient(args.ip, args.port) as client:
+                client.set_power(args.adr, args.power)
+            print(f"Reader power set to {args.power} dBm (adr {args.adr}).")
+        except TimeoutError:
+            ui.err("RFID reader not responding to broadcast \u2014 check power and serial wiring.")
+        except ConnectionError as exc:
+            ui.err(f"Connection failed: {exc}")
+        except (ValueError, RuntimeError) as exc:
+            ui.err(f"RFID error: {exc}")
