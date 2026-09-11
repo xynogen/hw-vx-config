@@ -45,15 +45,15 @@ def _menu(state: SessionState) -> Box:
         .item("2. Connect to specific IP")
     )
     if state.connected:
-        box.div().item("3. Show current configuration").item("4. Change IP address").item(
-            "5. Enable/Disable DHCP"
-        ).item("6. Change remote server").item("7. Edit & save full configuration").item(
-            "8. Reboot reader"
-        )
+        box.div().hdr("NETWORK CONFIG (UDP)").div().item("3. Show current configuration").item(
+            "4. Change IP address"
+        ).item("5. Enable/Disable DHCP").item("6. Change remote server").item(
+            "7. Edit & save full configuration"
+        ).item("8. Reboot reader")
     if state.config is not None:
-        box.div().item("9. RFID reader info").item("10. Set RFID reader address").item(
-            "11. Set RFID reader power"
-        )
+        box.div().hdr("RFID READER (TCP)").div().item("9. RFID reader info").item(
+            "10. Set RFID reader address"
+        ).item("11. Set RFID reader power")
     return box.div().item("q. Quit   l. List available options")
 
 
