@@ -10,9 +10,10 @@ HW-VX6346KL serial-to-Ethernet modules. Supports UDP discovery, network and
 serial settings, remote-server configuration, DHCP, reboot, and RFID reader
 commands.
 
-`hw-vx-config` owns the HW-VX configuration plane. UHFReader18 command framing
-and TCP communication come from its
-[`uhfreader18`](https://github.com/xynogen/uhfreader18) dependency.
+`hw-vx-config` is a command-line front-end. The HW-VX configuration protocol
+(UDP), reader command framing, and TCP communication all live in its
+[`uhfreader18`](https://github.com/xynogen/uhfreader18) dependency; this
+package adds the interactive menu, sub-commands, and output formatting.
 
 > Tested on Linux. macOS and Windows are not supported targets yet.
 
@@ -23,7 +24,7 @@ and TCP communication come from its
 - Configure through unicast or broadcast-by-MAC.
 - Read and write network, serial, remote-server, DHCP, and advanced settings.
 - Reboot modules and change network addressing.
-- Query RFID reader information and change reader address through `uhfreader18`.
+- Query RFID reader information and set reader address, power, or scan time through `uhfreader18`.
 - Use the interactive menu or scriptable CLI.
 - Use `HwVxDevice` and `HwVxNetworking` directly from Python.
 
@@ -93,9 +94,15 @@ These commands connect to the module's configured TCP port and use
 # Discover reader address and print firmware, power, and scan time
 hw-vx-config reader-info <ip> <port>
 
-# Change discovered reader address
+# Change reader address, transmit power (dBm), or inventory scan time (x100ms)
 hw-vx-config set-reader-addr <ip> <port> <new-address>
+hw-vx-config set-reader-power <ip> <port> <power>
+hw-vx-config set-reader-scantime <ip> <port> <scan-time>
 ```
+
+Each reader command takes `--adr <n>` to target a specific reader address
+(default `0`). The `<port>` is the module's configured TCP port, read from
+its network configuration.
 
 For direct protocol use:
 
@@ -120,8 +127,10 @@ from uhfreader18 import RfidClient
 
 ## Python Library
 
+The HW-VX protocol API lives in `uhfreader18.hwvx`:
+
 ```python
-from hw_vx_config import HwVxDevice, HwVxNetworking
+from uhfreader18.hwvx import HwVxDevice, HwVxNetworking
 
 with HwVxNetworking() as network:
     readers = network.search()
@@ -132,7 +141,10 @@ with HwVxDevice("192.168.1.100") as device:
     print(config.ip_address, config.baud_rate)
 ```
 
-See [`examples/library_usage.py`](examples/library_usage.py) and
+These names are also re-exported from `hw_vx_config` for backward
+compatibility. See the API reference in
+[uhfreader18 `docs/HWVX.md`](https://github.com/xynogen/uhfreader18/blob/main/docs/HWVX.md),
+plus [`examples/library_usage.py`](examples/library_usage.py) and
 [`examples/rfid_usage.py`](examples/rfid_usage.py).
 
 ## Package Relationship
