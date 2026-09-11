@@ -8,27 +8,32 @@ import argparse
 import ipaddress
 from collections.abc import Callable
 from dataclasses import dataclass
+from ipaddress import IPv4Address
 
 from uhfreader18 import RfidClient
-from uhfreader18.hwvx import DeviceConfig, HwVxDevice, HwVxNetworking, SearchResult
+from uhfreader18.hwvx import (
+    BaudRate,
+    DataBits,
+    DeviceConfig,
+    HwVxDevice,
+    HwVxNetworking,
+    NetProtocol,
+    NetWorkMode,
+    Parity,
+    SearchResult,
+    Toggle,
+)
 
 from hw_vx_config import ui
-from hw_vx_config.constants import (
-    BAUD_RATE_OPTIONS,
-    DATA_BITS_OPTIONS,
-    PARITY_OPTIONS,
-    PROTOCOL_OPTIONS,
-    TOGGLE_OPTIONS,
-    WORK_MODE_OPTIONS,
-)
 from hw_vx_config.formatting import (
     Box,
     fmt_mac,
-    fmt_option,
     fmt_protocol,
     fmt_reader_type,
     print_config,
 )
+
+_LAN_BROADCAST = IPv4Address("255.255.255.255")
 
 # ─── Banner ──────────────────────────────────────────────────────────
 
@@ -69,14 +74,14 @@ def _menu(state: SessionState) -> Box:
 class SessionState:
     """Holds all mutable state for the interactive menu session."""
 
-    ip: str | None = None
+    ip: IPv4Address | None = None
     mac: str | None = None
     config: DeviceConfig | None = None
     # The reader's real address (0-254) is discovered on demand via
     # broadcast, so we don't need to remember it across calls.
     reader_adr: int = 0
     broadcast: bool = False
-    broadcast_ip: str = "255.255.255.255"
+    broadcast_ip: IPv4Address = _LAN_BROADCAST
 
     @property
     def connected(self) -> bool:
@@ -93,12 +98,12 @@ class SessionState:
 
 
 def _with_device(
-    ip: str,
+    ip: IPv4Address,
     callback: Callable[[HwVxDevice, DeviceConfig], object],
     *,
     mac_address: str = "",
     broadcast: bool = False,
-    broadcast_ip: str = "255.255.255.255",
+    broadcast_ip: IPv4Address = _LAN_BROADCAST,
 ) -> object:
     """
     Connect to *ip*, read config, run *callback(dev, cfg)*.
@@ -151,11 +156,11 @@ def _ip_network(network: str) -> ipaddress.IPv4Network:
     return ipaddress.IPv4Network(network if "/" in network else f"{network}/24", strict=False)
 
 
-def _broadcast_ip(network: str | None) -> str:
+def _broadcast_ip(network: str | None) -> IPv4Address:
     """Return directed broadcast for a CIDR, or limited broadcast by default."""
     if not network:
-        return "255.255.255.255"
-    return str(_ip_network(network).broadcast_address)
+        return _LAN_BROADCAST
+    return _ip_network(network).broadcast_address
 
 
 def search_readers(network: str | None = None) -> list[SearchResult]:
@@ -177,7 +182,7 @@ def search_readers(network: str | None = None) -> list[SearchResult]:
                 results = net.search_targets(targets)
         else:
             ui.info(f"🔍 L2 broadcast ({target})")
-            with HwVxNetworking(target) as net:
+            with HwVxNetworking(str(target)) as net:
                 results = net.search()
     except TimeoutError:
         ui.err("Search timed out. Check network connection.")
@@ -195,7 +200,7 @@ def search_readers(network: str | None = None) -> list[SearchResult]:
     for i, r in enumerate(results, 1):
         box.row(
             f"#{i}",
-            f"{r.ip_address:<16} {fmt_mac(r.mac_address):<18} "
+            f"{r.ip_address!s:<16} {fmt_mac(r.mac_address):<18} "
             f"port {r.port_number:<6} {r.device_name}",
         )
     print("\n" + box.render() + "\n")
@@ -255,6 +260,9 @@ def _cmd_search(state: SessionState) -> None:
     r = select_reader(results)
     if not r:
         return
+    if r.ip_address is None:
+        ui.warn("Selected reader reported no IP address.")
+        return
     state.ip = r.ip_address
     state.mac = r.mac_address
 
@@ -281,7 +289,7 @@ def _cmd_search(state: SessionState) -> None:
     _with_device(
         state.ip,
         _read,
-        mac_address=state.mac,
+        mac_address=state.mac or "",
         broadcast=state.broadcast,
         broadcast_ip=state.broadcast_ip,
     )
@@ -289,13 +297,14 @@ def _cmd_search(state: SessionState) -> None:
 
 def _cmd_connect(state: SessionState) -> None:
     """2. Connect to specific IP."""
-    ip = input("  Enter reader IP address: ").strip()
-    if not ip:
+    raw = input("  Enter reader IP address: ").strip()
+    if not raw:
         return
-    if not ui.is_valid_ip(ip):
+    try:
+        state.ip = IPv4Address(raw)
+    except ipaddress.AddressValueError:
         ui.warn("Invalid IP address format.")
         return
-    state.ip = ip
     state.mac = ""
     state.broadcast = False
 
@@ -333,21 +342,9 @@ def _cmd_change_ip(state: SessionState) -> None:
         state.update_from_config(cfg)
 
         ui.info("Edit network addressing (Enter = keep current value):\n")
-        new_ip = ui.ask(
-            "IP Address",
-            cfg.ip_address,
-            validator=ui.is_valid_ip,
-            error_msg="Invalid IP address (e.g. 192.168.1.100).",
-        )
-        new_mask = ui.ask(
-            "Subnet Mask",
-            cfg.subnet_mask,
-            validator=ui.is_valid_ip,
-            error_msg="Invalid subnet mask.",
-        )
-        new_gw = ui.ask(
-            "Gateway IP", cfg.gateway_ip, validator=ui.is_valid_ip, error_msg="Invalid gateway IP."
-        )
+        new_ip = ui.ask_ip("IP Address", cfg.ip_address)
+        new_mask = ui.ask_ip("Subnet Mask", cfg.subnet_mask)
+        new_gw = ui.ask_ip("Gateway IP", cfg.gateway_ip)
 
         print()
         ui.kv("IP Address", new_ip)
@@ -422,19 +419,12 @@ def _cmd_remote_server(state: SessionState) -> None:
 
         ui.kv("Remote IP", cfg.remote_ip)
         ui.kv("Remote Port", cfg.remote_port)
-        ui.kv("Work Mode", fmt_option(cfg.work_mode, WORK_MODE_OPTIONS))
+        ui.kv("Work Mode", cfg.work_mode.name)
         print()
 
-        cfg.remote_ip = ui.ask(
-            "Remote IP", cfg.remote_ip, validator=ui.is_valid_ip, error_msg="Invalid IP address."
-        )
-        cfg.remote_port = ui.ask(
-            "Remote Port",
-            cfg.remote_port,
-            validator=ui.is_valid_port,
-            error_msg="Port must be 1-65535.",
-        )
-        cfg.work_mode = ui.ask("Work Mode", cfg.work_mode, WORK_MODE_OPTIONS)
+        cfg.remote_ip = ui.ask_ip("Remote IP", cfg.remote_ip)
+        cfg.remote_port = ui.ask_port("Remote Port", cfg.remote_port)
+        cfg.work_mode = ui.ask_enum("Work Mode", cfg.work_mode, NetWorkMode)
 
         if ui.confirm("Save and reboot?"):
             dev.save_config(cfg)
@@ -463,41 +453,23 @@ def _cmd_edit_full(state: SessionState) -> None:
         ui.info("Edit settings (press Enter to keep current value):\n")
 
         ui.section("Network")
-        cfg.ip_address = ui.ask(
-            "IP Address", cfg.ip_address, validator=ui.is_valid_ip, error_msg="Invalid IP address."
-        )
-        cfg.subnet_mask = ui.ask(
-            "Subnet Mask",
-            cfg.subnet_mask,
-            validator=ui.is_valid_ip,
-            error_msg="Invalid subnet mask.",
-        )
-        cfg.gateway_ip = ui.ask(
-            "Gateway IP", cfg.gateway_ip, validator=ui.is_valid_ip, error_msg="Invalid gateway IP."
-        )
-        cfg.port_number = ui.ask(
-            "Port", cfg.port_number, validator=ui.is_valid_port, error_msg="Port must be 1-65535."
-        )
-        cfg.protocol = ui.ask("Protocol", cfg.protocol, PROTOCOL_OPTIONS)
-        cfg.work_mode = ui.ask("Work Mode", cfg.work_mode, WORK_MODE_OPTIONS)
-        cfg.remote_ip = ui.ask(
-            "Remote IP", cfg.remote_ip, validator=ui.is_valid_ip, error_msg="Invalid IP address."
-        )
-        cfg.remote_port = ui.ask(
-            "Remote Port",
-            cfg.remote_port,
-            validator=ui.is_valid_port,
-            error_msg="Port must be 1-65535.",
-        )
-        cfg.username = ui.ask("Username", cfg.username)
-        cfg.device_name = ui.ask("Device Name", cfg.device_name)
+        cfg.ip_address = ui.ask_ip("IP Address", cfg.ip_address)
+        cfg.subnet_mask = ui.ask_ip("Subnet Mask", cfg.subnet_mask)
+        cfg.gateway_ip = ui.ask_ip("Gateway IP", cfg.gateway_ip)
+        cfg.port_number = ui.ask_port("Port", cfg.port_number)
+        cfg.protocol = ui.ask_enum("Protocol", cfg.protocol, NetProtocol)
+        cfg.work_mode = ui.ask_enum("Work Mode", cfg.work_mode, NetWorkMode)
+        cfg.remote_ip = ui.ask_ip("Remote IP", cfg.remote_ip)
+        cfg.remote_port = ui.ask_port("Remote Port", cfg.remote_port)
+        cfg.username = ui.ask_text("Username", cfg.username)
+        cfg.device_name = ui.ask_text("Device Name", cfg.device_name)
 
         ui.section("Serial")
-        cfg.baud_rate = ui.ask("Baud Rate", cfg.baud_rate, BAUD_RATE_OPTIONS)
-        cfg.parity = ui.ask("Parity", cfg.parity, PARITY_OPTIONS)
-        cfg.data_bits = ui.ask("Data Bits", cfg.data_bits, DATA_BITS_OPTIONS)
-        cfg.dtr_mode = ui.ask("DTR Mode", cfg.dtr_mode, TOGGLE_OPTIONS)
-        cfg.rts = ui.ask("RTS", cfg.rts, TOGGLE_OPTIONS)
+        cfg.baud_rate = ui.ask_enum("Baud Rate", cfg.baud_rate, BaudRate)
+        cfg.parity = ui.ask_enum("Parity", cfg.parity, Parity)
+        cfg.data_bits = ui.ask_enum("Data Bits", cfg.data_bits, DataBits)
+        cfg.dtr_mode = ui.ask_enum("DTR Mode", cfg.dtr_mode, Toggle)
+        cfg.rts = ui.ask_enum("RTS", cfg.rts, Toggle)
 
         print()
         print_config(cfg)
@@ -548,7 +520,7 @@ def _cmd_rfid_info(state: SessionState) -> None:
     assert state.ip is not None
     try:
         tcp_port = int(state.config.port_number)
-        with RfidClient(state.ip, tcp_port) as client:
+        with RfidClient(str(state.ip), tcp_port) as client:
             info, actual_adr = client.discover_address()
         # Always re-discover via broadcast so this works on any reader,
         # regardless of what address it has been commissioned with.
@@ -562,8 +534,8 @@ def _cmd_rfid_info(state: SessionState) -> None:
             .div()
             .row("Address", str(info.address))
             .row("Firmware", f"v{info.version}")
-            .row("Reader Type", fmt_reader_type(info.reader_type))
-            .row("Protocol", fmt_protocol(info.protocol_type))
+            .row("Reader Type", fmt_reader_type(info.reader_model))
+            .row("Protocol", fmt_protocol(info.protocols))
             .row("Power", f"{info.power} dBm" if info.power != 0xFF else "Unknown")
             .row("Scan Time", f"{info.scan_time * 100} ms")
         )
@@ -586,7 +558,7 @@ def _cmd_set_rfid_addr(state: SessionState) -> None:
     assert state.ip is not None
     try:
         tcp_port = int(state.config.port_number)
-        with RfidClient(state.ip, tcp_port) as client:
+        with RfidClient(str(state.ip), tcp_port) as client:
             _info, current_adr = client.discover_address()
         state.reader_adr = current_adr
         ui.info(f"Current reader address: {current_adr}")
@@ -608,7 +580,7 @@ def _cmd_set_rfid_addr(state: SessionState) -> None:
         ui.kv("Current address", str(current_adr))
         ui.kv("New address", str(new_adr))
         if ui.confirm("Apply?"):
-            with RfidClient(state.ip, tcp_port) as client:
+            with RfidClient(str(state.ip), tcp_port) as client:
                 client.set_address(current_adr, new_adr)
             ui.ok(f"Reader address changed: {current_adr} -> {new_adr}")
             state.reader_adr = new_adr
@@ -632,7 +604,7 @@ def _cmd_set_rfid_power(state: SessionState) -> None:
     assert state.ip is not None
     try:
         tcp_port = int(state.config.port_number)
-        with RfidClient(state.ip, tcp_port) as client:
+        with RfidClient(str(state.ip), tcp_port) as client:
             info, current_adr = client.discover_address()
         state.reader_adr = current_adr
         current_power = "Unknown" if info.power == 0xFF else f"{info.power} dBm"
@@ -655,7 +627,7 @@ def _cmd_set_rfid_power(state: SessionState) -> None:
         ui.kv("Current power", current_power)
         ui.kv("New power", f"{power} dBm")
         if ui.confirm("Apply?"):
-            with RfidClient(state.ip, tcp_port) as client:
+            with RfidClient(str(state.ip), tcp_port) as client:
                 client.set_power(current_adr, power)
             ui.ok(f"Reader power set to {power} dBm")
         else:
@@ -678,7 +650,7 @@ def _cmd_set_rfid_scantime(state: SessionState) -> None:
     assert state.ip is not None
     try:
         tcp_port = int(state.config.port_number)
-        with RfidClient(state.ip, tcp_port) as client:
+        with RfidClient(str(state.ip), tcp_port) as client:
             info, current_adr = client.discover_address()
         state.reader_adr = current_adr
         current_st = f"{info.scan_time * 100} ms ({info.scan_time} x100ms)"
@@ -702,7 +674,7 @@ def _cmd_set_rfid_scantime(state: SessionState) -> None:
         ui.kv("Current scan time", current_st)
         ui.kv("New scan time", f"{scan_time * 100} ms ({scan_time} x100ms)")
         if ui.confirm("Apply?"):
-            with RfidClient(state.ip, tcp_port) as client:
+            with RfidClient(str(state.ip), tcp_port) as client:
                 client.set_scan_time(current_adr, scan_time)
             ui.ok(f"Reader scan time set to {scan_time * 100} ms ({scan_time} x100ms)")
         else:
@@ -861,7 +833,7 @@ def main(argv: list[str] | None = None) -> None:
 
     elif args.command == "config":
         try:
-            with HwVxDevice(args.ip) as dev:
+            with HwVxDevice(IPv4Address(args.ip)) as dev:
                 dev.connect()
                 cfg = dev.get_config()
                 print_config(cfg)
@@ -872,16 +844,24 @@ def main(argv: list[str] | None = None) -> None:
 
     elif args.command == "set-ip":
         try:
-            with HwVxDevice(args.ip) as dev:
+            with HwVxDevice(IPv4Address(args.ip)) as dev:
                 dev.connect()
                 new_cfg: DeviceConfig | None = (
                     dev.get_config() if (args.mask is None or args.gateway is None) else None
                 )
-                mask = args.mask or (
-                    new_cfg.subnet_mask if new_cfg is not None else "255.255.255.0"
+                mask = (
+                    IPv4Address(args.mask)
+                    if args.mask
+                    else (
+                        new_cfg.subnet_mask if new_cfg is not None else IPv4Address("255.255.255.0")
+                    )
                 )
-                gateway = args.gateway or (new_cfg.gateway_ip if new_cfg is not None else "0.0.0.0")
-                dev.change_network(args.new_ip, mask, gateway)
+                gateway = (
+                    IPv4Address(args.gateway)
+                    if args.gateway
+                    else (new_cfg.gateway_ip if new_cfg is not None else IPv4Address("0.0.0.0"))
+                )
+                dev.change_network(IPv4Address(args.new_ip), mask, gateway)
             print(f"IP changed to {args.new_ip} (mask={mask} gw={gateway}). Reader rebooting...")
         except TimeoutError:
             ui.err("Reader not responding.")
@@ -890,7 +870,7 @@ def main(argv: list[str] | None = None) -> None:
 
     elif args.command == "dhcp":
         try:
-            with HwVxDevice(args.ip) as dev:
+            with HwVxDevice(IPv4Address(args.ip)) as dev:
                 dev.connect()
                 dev.set_dhcp(args.state == "on")
             state_str = "enabled" if args.state == "on" else "disabled"
@@ -902,7 +882,7 @@ def main(argv: list[str] | None = None) -> None:
 
     elif args.command == "reboot":
         try:
-            with HwVxDevice(args.ip) as dev:
+            with HwVxDevice(IPv4Address(args.ip)) as dev:
                 dev.connect()
                 dev.reboot()
             print("Reboot command sent.")
@@ -921,8 +901,8 @@ def main(argv: list[str] | None = None) -> None:
                 .div()
                 .row("Address", str(info.address))
                 .row("Firmware", f"v{info.version}")
-                .row("Reader Type", fmt_reader_type(info.reader_type))
-                .row("Protocol", fmt_protocol(info.protocol_type))
+                .row("Reader Type", fmt_reader_type(info.reader_model))
+                .row("Protocol", fmt_protocol(info.protocols))
                 .row("Power", f"{info.power} dBm" if info.power != 0xFF else "Unknown")
                 .row("Scan Time", f"{info.scan_time * 100} ms")
             )

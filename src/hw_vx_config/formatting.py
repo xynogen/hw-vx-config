@@ -1,19 +1,15 @@
 """
 Pretty-printing helpers for device configuration.
+
+The library models config fields as real types (IPv4Address, int, IntEnum),
+so rendering is just str() — enums print their own names. No index-to-label
+lookup tables to keep in sync.
 """
 
 from uhfreader18 import Protocol, ReaderType
 from uhfreader18.hwvx import DeviceConfig
 
-from hw_vx_config.constants import (
-    BAUD_RATE_OPTIONS,
-    DATA_BITS_OPTIONS,
-    DHCP_OPTIONS,
-    PARITY_OPTIONS,
-    PROTOCOL_OPTIONS,
-    TOGGLE_OPTIONS,
-    WORK_MODE_OPTIONS,
-)
+_PROTOCOL_LABELS = {Protocol.ISO18000_6C: "18000-6C", Protocol.ISO18000_6B: "18000-6B"}
 
 
 def fmt_mac(raw: str) -> str:
@@ -24,34 +20,17 @@ def fmt_mac(raw: str) -> str:
         return raw
 
 
-def fmt_option(value: str, options: dict[int, str]) -> str:
-    """Format an index *value* with its human-readable label."""
-    try:
-        idx = int(value)
-        label = options.get(idx, "?")
-        return f"{value} ({label})"
-    except (ValueError, TypeError):
-        return value
+def fmt_reader_type(reader_type: ReaderType | None) -> str:
+    """Label the decoded reader model (already an enum or None from the lib)."""
+    if reader_type is None:
+        return "Unknown"
+    return reader_type.name.replace("UHFREADER18", "UHFReader18")
 
 
-_PROTOCOL_LABELS = {Protocol.ISO18000_6C: "18000-6C", Protocol.ISO18000_6B: "18000-6B"}
-
-
-def fmt_reader_type(reader_type: int) -> str:
-    """Format the reader-type byte with its model label (decoded by the lib)."""
-    try:
-        label = ReaderType(reader_type).name.replace("UHFREADER18", "UHFReader18")
-    except ValueError:
-        label = "Unknown"
-    return f"0x{reader_type:02X} ({label})"
-
-
-def fmt_protocol(protocol_type: int) -> str:
-    """Format the protocol byte using the lib's Protocol bitfield."""
-    flags = Protocol(protocol_type & 0b11)
-    names = [name for flag, name in _PROTOCOL_LABELS.items() if flag in flags]
-    label = " + ".join(names) if names else "none"
-    return f"0x{protocol_type:02X} ({label})"
+def fmt_protocol(protocols: Protocol) -> str:
+    """Label the decoded Protocol bitfield."""
+    names = [name for flag, name in _PROTOCOL_LABELS.items() if flag in protocols]
+    return " + ".join(names) if names else "none"
 
 
 class Box:
@@ -79,8 +58,8 @@ class Box:
         self._entries.append(("div",))
         return self
 
-    def row(self, label: str, value: str) -> "Box":
-        self._entries.append(("row", label, value))
+    def row(self, label: str, value: object) -> "Box":
+        self._entries.append(("row", label, str(value)))
         return self
 
     def item(self, text: str) -> "Box":
@@ -149,9 +128,9 @@ def format_config(cfg: DeviceConfig) -> str:
         .row("Gateway IP", cfg.gateway_ip)
         .row("MAC Address", fmt_mac(cfg.mac_address))
         .row("Port", cfg.port_number)
-        .row("Protocol", fmt_option(cfg.protocol, PROTOCOL_OPTIONS))
-        .row("Work Mode", fmt_option(cfg.work_mode, WORK_MODE_OPTIONS))
-        .row("DHCP", fmt_option(cfg.dhcp, DHCP_OPTIONS))
+        .row("Protocol", cfg.protocol.name)
+        .row("Work Mode", cfg.work_mode.name)
+        .row("DHCP", cfg.dhcp.name)
         .row("Remote IP", cfg.remote_ip)
         .row("Remote Port", cfg.remote_port)
         .row("Username", cfg.username)
@@ -159,11 +138,11 @@ def format_config(cfg: DeviceConfig) -> str:
         .div()
         .hdr("SERIAL SETTINGS")
         .div()
-        .row("Baud Rate", fmt_option(cfg.baud_rate, BAUD_RATE_OPTIONS))
-        .row("Parity", fmt_option(cfg.parity, PARITY_OPTIONS))
-        .row("Data Bits", fmt_option(cfg.data_bits, DATA_BITS_OPTIONS))
-        .row("DTR Mode", fmt_option(cfg.dtr_mode, TOGGLE_OPTIONS))
-        .row("RTS", fmt_option(cfg.rts, TOGGLE_OPTIONS))
+        .row("Baud Rate", f"{cfg.baud_rate.bps} ({cfg.baud_rate.name})")
+        .row("Parity", cfg.parity.name)
+        .row("Data Bits", f"{cfg.data_bits.count} ({cfg.data_bits.name})")
+        .row("DTR Mode", cfg.dtr_mode.name)
+        .row("RTS", cfg.rts.name)
         .div()
         .hdr("ADVANCED SETTINGS")
         .div()

@@ -1,4 +1,4 @@
-"""Tests for hw_vx_config.ui — output helpers, validators, and ask()."""
+"""Tests for hw_vx_config.ui — output helpers and typed prompts."""
 
 from __future__ import annotations
 
@@ -9,9 +9,11 @@ import select
 import subprocess
 import sys
 import time
+from ipaddress import IPv4Address
 from pathlib import Path
 
 import pytest
+from uhfreader18.hwvx import NetProtocol
 
 from hw_vx_config import ui
 
@@ -98,81 +100,6 @@ class TestOutputHelpers:
         assert ":" in out
 
 
-# ─── Validators ──────────────────────────────────────────────────────
-
-
-class TestIsValidIp:
-    def test_valid(self) -> None:
-        assert ui.is_valid_ip("192.168.1.1")
-        assert ui.is_valid_ip("0.0.0.0")
-        assert ui.is_valid_ip("255.255.255.255")
-        assert ui.is_valid_ip("10.0.0.1")
-
-    def test_invalid_octets(self) -> None:
-        assert not ui.is_valid_ip("256.0.0.1")
-        assert not ui.is_valid_ip("1.2.3.999")
-
-    def test_too_few_parts(self) -> None:
-        assert not ui.is_valid_ip("192.168.1")
-
-    def test_too_many_parts(self) -> None:
-        assert not ui.is_valid_ip("1.2.3.4.5")
-
-    def test_non_numeric(self) -> None:
-        assert not ui.is_valid_ip("abc.def.ghi.jkl")
-
-    def test_empty(self) -> None:
-        assert not ui.is_valid_ip("")
-
-    def test_spaces(self) -> None:
-        assert not ui.is_valid_ip(" 192.168.1.1")
-
-    def test_negative_octet(self) -> None:
-        assert not ui.is_valid_ip("-1.0.0.0")
-
-
-class TestIsValidPort:
-    def test_valid_range(self) -> None:
-        assert ui.is_valid_port("1")
-        assert ui.is_valid_port("80")
-        assert ui.is_valid_port("8080")
-        assert ui.is_valid_port("65535")
-
-    def test_zero(self) -> None:
-        assert not ui.is_valid_port("0")
-
-    def test_too_high(self) -> None:
-        assert not ui.is_valid_port("65536")
-        assert not ui.is_valid_port("99999")
-
-    def test_non_numeric(self) -> None:
-        assert not ui.is_valid_port("abc")
-        assert not ui.is_valid_port("")
-
-    def test_negative(self) -> None:
-        assert not ui.is_valid_port("-1")
-
-
-class TestIsValidOption:
-    def test_valid_key(self) -> None:
-        opts = {0: "UDP", 1: "TCP"}
-        checker = ui.is_valid_option(opts)
-        assert checker("0")
-        assert checker("1")
-
-    def test_invalid_key(self) -> None:
-        opts = {0: "UDP", 1: "TCP"}
-        checker = ui.is_valid_option(opts)
-        assert not checker("2")
-        assert not checker("9")
-
-    def test_non_numeric(self) -> None:
-        opts = {0: "UDP"}
-        checker = ui.is_valid_option(opts)
-        assert not checker("abc")
-        assert not checker("")
-
-
 # ─── confirm() ───────────────────────────────────────────────────────
 
 
@@ -198,43 +125,59 @@ class TestConfirm:
         assert not ui.confirm("Do it?")
 
 
-# ─── ask() ───────────────────────────────────────────────────────────
+# ─── typed prompts ───────────────────────────────────────────────────
 
 
-class TestAsk:
+class TestAskIp:
     def test_empty_keeps_current(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("builtins.input", lambda _: "")
-        assert ui.ask("IP", "192.168.1.1") == "192.168.1.1"
+        assert ui.ask_ip("IP", IPv4Address("192.168.1.1")) == IPv4Address("192.168.1.1")
 
     def test_new_value_returned(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("builtins.input", lambda _: "10.0.0.1")
-        assert ui.ask("IP", "192.168.1.1") == "10.0.0.1"
+        assert ui.ask_ip("IP", IPv4Address("192.168.1.1")) == IPv4Address("10.0.0.1")
 
-    def test_with_options_valid(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("builtins.input", lambda _: "1")
-        assert ui.ask("Protocol", "0", {0: "UDP", 1: "TCP"}) == "1"
+    def test_rejects_invalid_then_accepts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        responses = iter(["256.0.0.1", "10.0.0.1"])
+        monkeypatch.setattr("builtins.input", lambda _: next(responses))
+        assert ui.ask_ip("IP", IPv4Address("1.2.3.4")) == IPv4Address("10.0.0.1")
 
-    def test_with_options_empty_keeps_current(self, monkeypatch: pytest.MonkeyPatch) -> None:
+
+class TestAskPort:
+    def test_empty_keeps_current(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("builtins.input", lambda _: "")
-        assert ui.ask("Protocol", "0", {0: "UDP", 1: "TCP"}) == "0"
+        assert ui.ask_port("Port", 4196) == 4196
 
-    def test_with_options_rejects_invalid_then_accepts(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Invalid option causes re-prompt, then valid input is accepted."""
+    def test_new_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("builtins.input", lambda _: "8080")
+        assert ui.ask_port("Port", 80) == 8080
+
+    def test_rejects_out_of_range_then_accepts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        responses = iter(["0", "65536", "443"])
+        monkeypatch.setattr("builtins.input", lambda _: next(responses))
+        assert ui.ask_port("Port", 80) == 443
+
+
+class TestAskEnum:
+    def test_empty_keeps_current(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("builtins.input", lambda _: "")
+        assert ui.ask_enum("Protocol", NetProtocol.UDP, NetProtocol) is NetProtocol.UDP
+
+    def test_selects_by_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("builtins.input", lambda _: "1")
+        assert ui.ask_enum("Protocol", NetProtocol.UDP, NetProtocol) is NetProtocol.TCP
+
+    def test_rejects_invalid_then_accepts(self, monkeypatch: pytest.MonkeyPatch) -> None:
         responses = iter(["9", "1"])
         monkeypatch.setattr("builtins.input", lambda _: next(responses))
-        assert ui.ask("Protocol", "0", {0: "UDP", 1: "TCP"}) == "1"
+        assert ui.ask_enum("Protocol", NetProtocol.UDP, NetProtocol) is NetProtocol.TCP
 
-    def test_custom_validator_rejects_then_accepts(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        responses = iter(["banana", "10.0.0.1"])
-        monkeypatch.setattr("builtins.input", lambda _: next(responses))
-        result = ui.ask("IP", "1.2.3.4", validator=ui.is_valid_ip, error_msg="Bad IP")
-        assert result == "10.0.0.1"
 
-    def test_validator_overrides_option_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When both options and validator are given, validator takes precedence."""
-        # validator always returns True, so even "99" passes
-        monkeypatch.setattr("builtins.input", lambda _: "99")
-        result = ui.ask("X", "0", {0: "A", 1: "B"}, validator=lambda _: True)
-        assert result == "99"
+class TestAskText:
+    def test_empty_keeps_current(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("builtins.input", lambda _: "")
+        assert ui.ask_text("Name", "admin") == "admin"
+
+    def test_new_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("builtins.input", lambda _: "root")
+        assert ui.ask_text("Name", "admin") == "root"

@@ -7,9 +7,17 @@
   `hw_vx_config.device` modules. Import `DeviceConfig`, `SearchResult`,
   `HwVxNetworking`, and `HwVxDevice` from `uhfreader18.hwvx` (they remain
   re-exported from the `hw_vx_config` top-level for convenience).
-- Require `uhfreader18>=0.4,<0.5`.
-- Derive the CLI's display option maps from the library enums.
-- Decode reader-info bytes through the `uhfreader18` enums.
+- Require `uhfreader18>=0.6,<0.7`.
+- **Breaking:** adopt the library's fully-typed models. `DeviceConfig` fields
+  are real types (`IPv4Address`, `int`, and the module `IntEnum`s) instead of
+  wire strings; assign enum members and `IPv4Address` values directly.
+- Replace the string-based `ui.ask()` and hand-rolled validators with typed
+  prompts (`ask_ip`, `ask_port`, `ask_enum`, `ask_text`) that parse and return
+  the field's real type; `IPv4Address()` is the IP validator.
+- Drop the `hw_vx_config.constants` option maps and the `fmt_option` helper —
+  enums render their own names, so no index-to-label tables to keep in sync.
+- Decode reader-info through the `uhfreader18` enums
+  (`ReaderInfo.reader_model`, `ReaderInfo.protocols`).
 
 ### Migration
 

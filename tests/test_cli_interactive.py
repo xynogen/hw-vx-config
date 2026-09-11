@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from ipaddress import IPv4Address
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -37,25 +38,25 @@ class TestSessionState:
         assert s.config is None
         assert s.reader_adr == 0
         assert not s.broadcast
-        assert s.broadcast_ip == "255.255.255.255"
+        assert s.broadcast_ip == IPv4Address("255.255.255.255")
 
     def test_connected_false_by_default(self) -> None:
         assert not SessionState().connected
 
     def test_connected_true_when_ip_set(self) -> None:
-        s = SessionState(ip="192.168.1.1")
+        s = SessionState(ip=IPv4Address("192.168.1.1"))
         assert s.connected
 
     def test_update_from_config(self) -> None:
-        s = SessionState(ip="10.0.0.1", mac="old")
-        cfg = DeviceConfig(mac_address="AA:BB:CC:DD:EE:FF", ip_address="10.0.0.1")
+        s = SessionState(ip=IPv4Address("10.0.0.1"), mac="old")
+        cfg = DeviceConfig(mac_address="AA:BB:CC:DD:EE:FF", ip_address=IPv4Address("10.0.0.1"))
         s.update_from_config(cfg)
         assert s.config is cfg
         assert s.mac == "AA:BB:CC:DD:EE:FF"
 
     def test_update_from_config_keeps_mac_if_empty(self) -> None:
-        s = SessionState(ip="10.0.0.1", mac="old")
-        cfg = DeviceConfig(mac_address="", ip_address="10.0.0.1")
+        s = SessionState(ip=IPv4Address("10.0.0.1"), mac="old")
+        cfg = DeviceConfig(mac_address="", ip_address=IPv4Address("10.0.0.1"))
         s.update_from_config(cfg)
         assert s.mac == "old"
 
@@ -69,7 +70,7 @@ class TestRequireConnection:
         assert "No reader selected" in capsys.readouterr().out
 
     def test_returns_true_when_connected(self) -> None:
-        assert _require_connection(SessionState(ip="1.2.3.4"))
+        assert _require_connection(SessionState(ip=IPv4Address("1.2.3.4")))
 
 
 class TestRequireConfig:
@@ -77,11 +78,11 @@ class TestRequireConfig:
         assert not _require_config(SessionState())
 
     def test_false_when_no_config(self, capsys: pytest.CaptureFixture[str]) -> None:
-        assert not _require_config(SessionState(ip="1.2.3.4"))
+        assert not _require_config(SessionState(ip=IPv4Address("1.2.3.4")))
         assert "No config loaded" in capsys.readouterr().out
 
     def test_true_when_both(self) -> None:
-        s = SessionState(ip="1.2.3.4", config=DeviceConfig())
+        s = SessionState(ip=IPv4Address("1.2.3.4"), config=DeviceConfig())
         assert _require_config(s)
 
 
@@ -94,7 +95,7 @@ class TestWithDevice:
             mock.return_value.__enter__ = MagicMock(return_value=mock.return_value)
             mock.return_value.__exit__ = MagicMock(return_value=False)
             mock.return_value.connect.side_effect = TimeoutError("timeout")
-            result = _with_device("1.2.3.4", lambda d, c: None)
+            result = _with_device(IPv4Address("1.2.3.4"), lambda d, c: None)
         assert result is None
         assert "not responding" in capsys.readouterr().out
 
@@ -103,7 +104,7 @@ class TestWithDevice:
             mock.return_value.__enter__ = MagicMock(return_value=mock.return_value)
             mock.return_value.__exit__ = MagicMock(return_value=False)
             mock.return_value.connect.side_effect = ConnectionError("refused")
-            result = _with_device("1.2.3.4", lambda d, c: None)
+            result = _with_device(IPv4Address("1.2.3.4"), lambda d, c: None)
         assert result is None
         assert "Connection failed" in capsys.readouterr().out
 
@@ -112,7 +113,7 @@ class TestWithDevice:
             mock.return_value.__enter__ = MagicMock(return_value=mock.return_value)
             mock.return_value.__exit__ = MagicMock(return_value=False)
             mock.return_value.connect.side_effect = ValueError("bad data")
-            result = _with_device("1.2.3.4", lambda d, c: None)
+            result = _with_device(IPv4Address("1.2.3.4"), lambda d, c: None)
         assert result is None
         assert "Bad response" in capsys.readouterr().out
 
@@ -123,7 +124,7 @@ class TestWithDevice:
             dev.get_config.return_value = DeviceConfig()
             mock.return_value.__enter__ = MagicMock(return_value=dev)
             mock.return_value.__exit__ = MagicMock(return_value=False)
-            result = _with_device("1.2.3.4", lambda d, c: "ok")
+            result = _with_device(IPv4Address("1.2.3.4"), lambda d, c: "ok")
         assert result == "ok"
 
 
@@ -166,7 +167,7 @@ class TestSearchCommand:
     @pytest.mark.parametrize(("choice", "broadcast"), [("1", False), ("2", True)])
     def test_scans_once_and_uses_selected_mode(self, choice: str, broadcast: bool) -> None:
         result = SearchResult(
-            ip_address="192.168.1.100",
+            ip_address=IPv4Address("192.168.1.100"),
             mac_address="AA:BB:CC:DD:EE:FF",
         )
         state = SessionState()
@@ -184,13 +185,15 @@ class TestSearchCommand:
         assert with_device.call_args.kwargs == {
             "mac_address": result.mac_address,
             "broadcast": broadcast,
-            "broadcast_ip": "10.10.0.255",
+            "broadcast_ip": IPv4Address("10.10.0.255"),
         }
         assert state.broadcast is broadcast
-        assert state.broadcast_ip == "10.10.0.255"
+        assert state.broadcast_ip == IPv4Address("10.10.0.255")
 
     def test_configuration_submenu_is_boxed(self, capsys: pytest.CaptureFixture[str]) -> None:
-        result = SearchResult(ip_address="192.168.1.100", mac_address="AA:BB:CC:DD:EE:FF")
+        result = SearchResult(
+            ip_address=IPv4Address("192.168.1.100"), mac_address="AA:BB:CC:DD:EE:FF"
+        )
         with (
             patch("hw_vx_config.cli.search_readers", return_value=[result]),
             patch("hw_vx_config.cli._with_device"),
@@ -212,10 +215,10 @@ class TestRuntimeMode:
         self, handler: Callable[[SessionState], None]
     ) -> None:
         state = SessionState(
-            ip="192.168.1.100",
+            ip=IPv4Address("192.168.1.100"),
             mac="AA:BB:CC:DD:EE:FF",
             broadcast=True,
-            broadcast_ip="10.10.0.255",
+            broadcast_ip=IPv4Address("10.10.0.255"),
         )
         with patch("hw_vx_config.cli._with_device") as with_device:
             handler(state)
@@ -223,7 +226,7 @@ class TestRuntimeMode:
         assert with_device.call_args.kwargs == {
             "mac_address": state.mac,
             "broadcast": True,
-            "broadcast_ip": "10.10.0.255",
+            "broadcast_ip": IPv4Address("10.10.0.255"),
         }
 
     @pytest.mark.parametrize(
@@ -239,10 +242,10 @@ class TestRuntimeMode:
         inputs: list[str],
     ) -> None:
         state = SessionState(
-            ip="192.168.1.100",
+            ip=IPv4Address("192.168.1.100"),
             mac="AA:BB:CC:DD:EE:FF",
             broadcast=True,
-            broadcast_ip="10.10.0.255",
+            broadcast_ip=IPv4Address("10.10.0.255"),
         )
         with (
             patch("builtins.input", side_effect=inputs),
@@ -256,7 +259,7 @@ class TestRuntimeMode:
             state.ip,
             mac_address=state.mac,
             broadcast=True,
-            broadcast_ip="10.10.0.255",
+            broadcast_ip=IPv4Address("10.10.0.255"),
         )
 
 
@@ -331,9 +334,9 @@ class TestSearchReaders:
             net = mock_net.return_value.__enter__.return_value
             net.search.return_value = [
                 SearchResult(
-                    ip_address="192.168.1.100",
+                    ip_address=IPv4Address("192.168.1.100"),
                     mac_address="0.34.112.0.167.227",
-                    port_number="4196",
+                    port_number=4196,
                     device_name="HW-VX6330K",
                 )
             ]
@@ -372,7 +375,7 @@ class TestInteractiveMenu:
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         with patch("builtins.input", side_effect=["l", "q"]):
-            _run_menu(SessionState(ip="10.10.23.241"))
+            _run_menu(SessionState(ip=IPv4Address("10.10.23.241")))
 
         out = capsys.readouterr().out
         assert "8. Reboot reader" in out
@@ -381,7 +384,7 @@ class TestInteractiveMenu:
     def test_l_lists_all_options_when_config_loaded(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        state = SessionState(ip="10.10.23.241", config=DeviceConfig())
+        state = SessionState(ip=IPv4Address("10.10.23.241"), config=DeviceConfig())
         with patch("builtins.input", side_effect=["l", "q"]):
             _run_menu(state)
 

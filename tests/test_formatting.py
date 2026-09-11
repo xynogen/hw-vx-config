@@ -1,11 +1,11 @@
 """Tests for hw_vx_config.formatting."""
 
+from uhfreader18 import Protocol, ReaderType
 from uhfreader18.hwvx import DeviceConfig
 
 from hw_vx_config.formatting import (
     Box,
     fmt_mac,
-    fmt_option,
     fmt_protocol,
     fmt_reader_type,
     format_config,
@@ -30,41 +30,27 @@ class TestFmtMac:
         assert fmt_mac("") == ""
 
 
-class TestFmtOption:
-    def test_known_index(self) -> None:
-        assert fmt_option("0", {0: "UDP", 1: "TCP"}) == "0 (UDP)"
-        assert fmt_option("1", {0: "UDP", 1: "TCP"}) == "1 (TCP)"
-
-    def test_unknown_index(self) -> None:
-        assert fmt_option("9", {0: "UDP", 1: "TCP"}) == "9 (?)"
-
-    def test_non_numeric_value(self) -> None:
-        assert fmt_option("abc", {0: "UDP"}) == "abc"
-
-
 class TestFmtReaderType:
     def test_known(self) -> None:
-        assert fmt_reader_type(0x09) == "0x09 (UHFReader18)"
+        assert fmt_reader_type(ReaderType.UHFREADER18) == "UHFReader18"
 
     def test_unknown(self) -> None:
-        assert fmt_reader_type(0xAB) == "0xAB (Unknown)"
+        assert fmt_reader_type(None) == "Unknown"
 
 
 class TestFmtProtocol:
     def test_both_protocols(self) -> None:
-        assert fmt_protocol(0x03) == "0x03 (18000-6C + 18000-6B)"
+        both = Protocol.ISO18000_6C | Protocol.ISO18000_6B
+        assert fmt_protocol(both) == "18000-6C + 18000-6B"
 
     def test_6c_only(self) -> None:
-        assert fmt_protocol(0x02) == "0x02 (18000-6C)"
+        assert fmt_protocol(Protocol.ISO18000_6C) == "18000-6C"
 
     def test_6b_only(self) -> None:
-        assert fmt_protocol(0x01) == "0x01 (18000-6B)"
+        assert fmt_protocol(Protocol.ISO18000_6B) == "18000-6B"
 
     def test_none(self) -> None:
-        assert fmt_protocol(0x00) == "0x00 (none)"
-
-    def test_empty_value(self) -> None:
-        assert fmt_option("", {0: "UDP"}) == ""
+        assert fmt_protocol(Protocol(0)) == "none"
 
 
 class TestFormatConfig:
@@ -80,9 +66,9 @@ class TestFormatConfig:
 
     def test_contains_formatted_options(self, sample_config: DeviceConfig) -> None:
         output = format_config(sample_config)
-        assert "0 (UDP)" in output  # protocol
-        assert "0 (Server)" in output  # work_mode
-        assert "3 (9600)" in output  # baud_rate
+        assert "UDP" in output  # protocol enum name
+        assert "SERVER" in output  # work_mode enum name
+        assert "9600" in output  # baud_rate bps
 
     def test_box_drawing_present(self, sample_config: DeviceConfig) -> None:
         output = format_config(sample_config)
