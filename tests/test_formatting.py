@@ -1,6 +1,13 @@
 """Tests for hw_vx_config.formatting."""
 
-from hw_vx_config.formatting import Box, fmt_mac, fmt_option, format_config
+from hw_vx_config.formatting import (
+    Box,
+    fmt_mac,
+    fmt_option,
+    fmt_protocol,
+    fmt_reader_type,
+    format_config,
+)
 from hw_vx_config.models import DeviceConfig
 
 
@@ -32,6 +39,28 @@ class TestFmtOption:
 
     def test_non_numeric_value(self) -> None:
         assert fmt_option("abc", {0: "UDP"}) == "abc"
+
+
+class TestFmtReaderType:
+    def test_known(self) -> None:
+        assert fmt_reader_type(0x09) == "0x09 (UHFReader18)"
+
+    def test_unknown(self) -> None:
+        assert fmt_reader_type(0xAB) == "0xAB (Unknown)"
+
+
+class TestFmtProtocol:
+    def test_both_protocols(self) -> None:
+        assert fmt_protocol(0x03) == "0x03 (18000-6C + 18000-6B)"
+
+    def test_6c_only(self) -> None:
+        assert fmt_protocol(0x02) == "0x02 (18000-6C)"
+
+    def test_6b_only(self) -> None:
+        assert fmt_protocol(0x01) == "0x01 (18000-6B)"
+
+    def test_none(self) -> None:
+        assert fmt_protocol(0x00) == "0x00 (none)"
 
     def test_empty_value(self) -> None:
         assert fmt_option("", {0: "UDP"}) == ""

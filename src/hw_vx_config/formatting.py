@@ -32,6 +32,27 @@ def fmt_option(value: str, options: dict[int, str]) -> str:
         return value
 
 
+# Reader Type byte from Get Reader Info (0x21); 0x09 is the UHFReader18 line.
+READER_TYPES: dict[int, str] = {0x09: "UHFReader18"}
+
+
+def fmt_reader_type(reader_type: int) -> str:
+    """Format the reader-type byte with its known model label."""
+    label = READER_TYPES.get(reader_type, "Unknown")
+    return f"0x{reader_type:02X} ({label})"
+
+
+def fmt_protocol(protocol_type: int) -> str:
+    """Format the protocol byte: bit0 = ISO 18000-6B, bit1 = ISO 18000-6C."""
+    protocols = []
+    if protocol_type & 0b10:
+        protocols.append("18000-6C")
+    if protocol_type & 0b01:
+        protocols.append("18000-6B")
+    label = " + ".join(protocols) if protocols else "none"
+    return f"0x{protocol_type:02X} ({label})"
+
+
 class Box:
     """
     Builds a fixed-width box from a list of (label, value) rows.

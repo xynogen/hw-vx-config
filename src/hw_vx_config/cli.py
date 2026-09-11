@@ -21,7 +21,14 @@ from hw_vx_config.constants import (
     WORK_MODE_OPTIONS,
 )
 from hw_vx_config.device import HwVxDevice
-from hw_vx_config.formatting import Box, fmt_mac, fmt_option, print_config
+from hw_vx_config.formatting import (
+    Box,
+    fmt_mac,
+    fmt_option,
+    fmt_protocol,
+    fmt_reader_type,
+    print_config,
+)
 from hw_vx_config.models import DeviceConfig, SearchResult
 from hw_vx_config.transport import HwVxNetworking
 
@@ -557,8 +564,8 @@ def _cmd_rfid_info(state: SessionState) -> None:
             .div()
             .row("Address", str(info.address))
             .row("Firmware", f"v{info.version}")
-            .row("Reader Type", f"0x{info.reader_type:02X}")
-            .row("Protocol", f"0x{info.protocol_type:02X}")
+            .row("Reader Type", fmt_reader_type(info.reader_type))
+            .row("Protocol", fmt_protocol(info.protocol_type))
             .row("Power", f"{info.power} dBm" if info.power != 0xFF else "Unknown")
             .row("Scan Time", f"{info.scan_time * 100} ms")
         )
@@ -916,8 +923,8 @@ def main(argv: list[str] | None = None) -> None:
                 .div()
                 .row("Address", str(info.address))
                 .row("Firmware", f"v{info.version}")
-                .row("Reader Type", f"0x{info.reader_type:02X}")
-                .row("Protocol", f"0x{info.protocol_type:02X}")
+                .row("Reader Type", fmt_reader_type(info.reader_type))
+                .row("Protocol", fmt_protocol(info.protocol_type))
                 .row("Power", f"{info.power} dBm" if info.power != 0xFF else "Unknown")
                 .row("Scan Time", f"{info.scan_time * 100} ms")
             )
